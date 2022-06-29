@@ -9,3 +9,4 @@ from .layers import *
 from .detector_layers import *
 from .propagators import *
 from .wavefronts import *
+from .utilities import *
