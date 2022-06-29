@@ -62,7 +62,8 @@ class NotALeaf(Exception):
             The helpfully formatted error message. 
         """
         print_string = \
-            f"""{self.leaf} is not a leaf of {self.pytree}"""
+            f"{self.leaf} is not a leaf of {self.pytree}"
+        return print_string
 
 
 class GradientInterface(eqx.Module):
