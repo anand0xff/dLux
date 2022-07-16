@@ -2,7 +2,7 @@ name = "dLux"
 
 from .base import OpticalSystem
 from .detectors import (ApplySaturation, ApplyPixelResponse, 
-    ApplyJitter)
+    ApplyJitter, AddConstant, IntegerDownsample)
 from .layers import (AddPhase, ApplyAperture, ApplyBasisCLIMB, 
     ApplyBasisOPD, ApplyOPD, CircularAperture, CreateWavefront,
     NormaliseWavefront, TiltWavefront)
