@@ -20,7 +20,7 @@ Array = TypeVar("Array")
 
 def get_pixel_vector(
         number_of_pixels : int,
-        pixel_offset : int = 0) -> Array:
+        pixel_offset : float = 0.) -> Array:
     """
     Generate the coordinates along the edge of the image.
 
@@ -28,7 +28,7 @@ def get_pixel_vector(
     ----------
     number_of_pixels : int
         The number of pixels along the edge of the pixel plane.
-    pixel_offset : int
+    pixel_offset : float
         The number of pixels to offset the zero.
 
     Returns
@@ -42,8 +42,8 @@ def get_pixel_vector(
 
 def get_pixel_positions(
         number_of_pixels : int, 
-        x_pixel_offset : int = 0,
-        y_pixel_offset : int = 0) -> Array:
+        x_pixel_offset : float = 0.,
+        y_pixel_offset : float = 0.) -> Array:
     """
     Generates offset para-axial coordinates, defining the optical 
     axis. 
@@ -52,10 +52,10 @@ def get_pixel_positions(
     ----------
     number_of_pixels : int
         The number of pixels along the side of the output array.
-    x_pixel_offset : int = 0.
+    x_pixel_offset : float = 0.
         The x offset of the centre of the coordinate system in the 
         square output array.
-    y_pixel_offset : int = 0
+    y_pixel_offset : float = 0.
         The y offset of the centre of the coordinate system in the 
         square output array.
 
@@ -72,8 +72,8 @@ def get_pixel_positions(
 
 # TODO:     
 def get_radial_positions(number_of_pixels : int,
-        x_pixel_offset : int,
-        y_pixel_offset : int) -> Matrix:
+        x_pixel_offset : float,
+        y_pixel_offset : float) -> Matrix:
     """
     Generate the radial coordinates of each pixel. 
 
@@ -81,10 +81,10 @@ def get_radial_positions(number_of_pixels : int,
     ----------
     number_of_pixels : int
         The number of pixels along one edge of the square array.
-    x_pixel_offset : int = 0.
+    x_pixel_offset : float = 0.
         The x offset of the centre of the coordinate system in the 
         square output array.
-    y_pixel_offset : int = 0
+    y_pixel_offset : float = 0.
         The y offset of the centre of the coordinate system in the 
         square output array.
 
