@@ -1243,3 +1243,7 @@ class GaussianWavefront(Wavefront):
         return eqx.tree_at(
             lambda wavefront : wavefront.beam_radius, self, beam_radius,
             is_leaf = lambda leaf : leaf is None)
+
+# So, I should do some work. I should hug more closely to poppy 
+# and fix to inherit from the fixed sampling propagator perhaps 
+# using 

@@ -240,8 +240,10 @@ class Propagator(eqx.Module):
             The electric field of the wavefronts.
         """
         field = jax.lax.cond(self.is_inverse(),
-            lambda wavefront : self._inverse_fourier_transform(wavefront),
-            lambda wavefront : self._fourier_transform(wavefront),
+            lambda wavefront : \
+                self._inverse_fourier_transform(wavefront),
+            lambda wavefront : \
+                self._fourier_transform(wavefront),
             wavefront)
 
         field *= self._normalising_factor(wavefront)
@@ -572,7 +574,7 @@ class FixedSamplingPropagator(Propagator):
     and cannot be modified elsewise. 
     """
     def _fourier_transform(self : Propagator, 
-            wavefront : Wavefront) -> Array:
+            wavefront : Matrix) -> Array:
         """
         Perfrom a fast fourier transform on the wavefront.
 
@@ -586,17 +588,17 @@ class FixedSamplingPropagator(Propagator):
         field : Array[Complex]
             The complex electric field units following propagation.
         """
-        return np.fft.fftshift(np.fft.ifft2(wavefront.get_complex_form()))
+        return np.fft.fftshift(np.fft.ifft2(wavefront))
 
 
     def _inverse_fourier_transform(self : Propagator,
-            wavefront : Wavefront) -> Array:
+            wavefront : Matrix) -> Array:
         """
         Perfrom an inverse fourier transform of a wavefront.
 
         Parameters
         ----------
-        wavefront : Wavefront
+        wavefront : Matrix
             The wavefront to be propagated.
 
         Returns
@@ -604,7 +606,7 @@ class FixedSamplingPropagator(Propagator):
         field : Array[Complex]
             The complex electric field units following propagation.
         """
-        return np.fft.fft2(np.fft.ifftshift(wavefront.get_complex_form()))
+        return np.fft.fft2(np.fft.ifftshift(wavefront))
 
 
     def _normalising_factor(self : Propagator, 
@@ -665,7 +667,7 @@ class FixedSamplingPropagator(Propagator):
         """
         wavefront = parameters["Wavefront"]
 
-        new_wavefront = self._propagate(wavefront)
+        new_wavefront = self._propagate(wavefront.get_complex_form())
 
         new_amplitude = np.abs(new_wavefront)
         new_phase = np.angle(new_wavefront)
@@ -752,7 +754,7 @@ class PhysicalMFT(VariableSamplingPropagator):
 
         Returns 
         -------
-        : float, meters
+        focal_length : float, meters
             The focal length. 
         """
         return self.focal_length
@@ -997,13 +999,10 @@ class PhysicalFresnel(VariableSamplingPropagator):
         propagation_distance = self.get_focal_length() + self.get_focal_shift()
 
         field = wavefront.get_complex_form()
-        print("initial: ", np.sum(np.abs(field) ** 2))
         field *= self.quadratic_phase(*input_positions,
             wavefront.get_wavelength(), -self.get_focal_length())
-        print("thin lens: ", np.sum(np.abs(field) ** 2))
         field *= self.quadratic_phase(*input_positions, 
             wavefront.get_wavelength(), propagation_distance)
-        print("rho_1: ", np.sum(np.abs(field) ** 2))
 
         amplitude = np.abs(field)
         phase = np.angle(field)
@@ -1011,14 +1010,10 @@ class PhysicalFresnel(VariableSamplingPropagator):
 
         # Gives the inverse capability
         field = super()._propagate(wavefront) 
-        print("_propagate:", np.sum(np.abs(field) ** 2))
         field *= wavefront.get_pixel_scale() ** 2
-        print("pixel_scale:", np.sum(np.abs(field) ** 2))
         field *= wavefront.transfer_function(propagation_distance)
-        print("transfer_function: ", np.sum(np.abs(field) ** 2))
         field *= self.quadratic_phase(*output_positions, 
             wavefront.get_wavelength(), propagation_distance)
-        print("rho_2: ", np.sum(np.abs(field) ** 2))
 
         return field 
 
@@ -1147,7 +1142,7 @@ class AngularFresnel(Propagator):
     pass
 
 
-class GaussianPropagator(eqx.Module):
+class GaussianPropagator(FixedSamplingPropagator):
     """
     An intermediate plane fresnel algorithm for propagating the
     `GaussianWavefront` class between the planes. The propagator 
@@ -1175,6 +1170,9 @@ class GaussianPropagator(eqx.Module):
         self.distance = distance
 
 
+    # TODO: Note that the new pixel_scale should be calculated here. 
+
+
     def planar_to_planar(self : GaussianPropagator, 
             wavefront: GaussianWavefront, 
             distance: float) -> GaussianWavefront:
@@ -1195,8 +1193,7 @@ class GaussianPropagator(eqx.Module):
         wavefront : GaussianWavefront
             The new `Wavefront` propagated by `distance`. 
         """
-        field = wavefront.get_amplitude() * \
-            np.exp(1j * wavefront.get_phase())
+        field = wavefront.get_complex_form()
 
         new_field = np.fft.ifft2(
             wavefront.transfer_function(distance) * \
