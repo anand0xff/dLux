@@ -1,7 +1,13 @@
 import dLux
-import typing 
+import typing
+import jax 
+import jax.numpy as np
+import equinox as eqx
 
 Wavefront = typing.TypeVar("Wavefront")
+Array = typing.TypeVar("Array")
+Matrix = typing.TypeVar("Matrix")
+Propagator = typing.TypeVar("Propagator")
 
 class GaussianWavefront(dLux.Wavefront):
     """
@@ -30,7 +36,7 @@ class GaussianWavefront(dLux.Wavefront):
         The position of the beam waist along the optical axis. 
     """
     position : float 
-    beam_radius : float
+    beam_waist_radius : float
     phase_radius : float
     location_of_waist : float
 
@@ -57,10 +63,10 @@ class GaussianWavefront(dLux.Wavefront):
             the optical axis.
         """
         super().__init__(wavelength, offset)
-        self.beam_radius = np.asarray(beam_radius).astype(float)
+        self.beam_waist_radius = np.asarray(beam_radius).astype(float)
         self.position = np.asarray(position).astype(float)
         self.location_of_waist = self.position
-        self.phase_radius = self.calculate_phase_radius()
+        self.phase_radius = self.get_phase_radius()
 
 
     def get_position(self : Wavefront) -> float:
@@ -98,7 +104,7 @@ class GaussianWavefront(dLux.Wavefront):
             is_leaf = lambda leaf : leaf is None)
 
 
-    def get_beam_radius(self : Wavefront) -> float:
+    def get_beam_waist_radius(self : Wavefront) -> float:
         """
         Accessor for the radius of the wavefront.
 
@@ -107,7 +113,7 @@ class GaussianWavefront(dLux.Wavefront):
         beam_radius : float
             The radius of the `Wavefront` in meters.
         """
-        return self.beam_radius
+        return self.beam_waist_radius
 
 
     def get_phase_radius(self : Wavefront) -> float:
@@ -132,7 +138,7 @@ class GaussianWavefront(dLux.Wavefront):
         rayleigh_distance : float
             The Rayleigh distance of the wavefront in metres.
         """
-        return np.pi * self.get_beam_radius() ** 2\
+        return np.pi * self.get_beam_waist_radius() ** 2\
             / self.get_wavelength()
 
 
@@ -196,7 +202,7 @@ class GaussianWavefront(dLux.Wavefront):
 
     # NOTE: This should only be updated after passing through 
     # an optic like a quadratic lens. 
-    def calculate_location_of_waist(self: Wavefront) -> float:
+    def get_location_of_waist(self: Wavefront) -> float:
         """
         Calculates the position of the waist along the direction of 
         propagation based of the current state of the wave. This should 
@@ -212,7 +218,7 @@ class GaussianWavefront(dLux.Wavefront):
             self.rayleigh_distance()) ** 2)
 
 
-    def waist_radius(self : Wavefront) -> float:
+    def get_beam_radius(self : Wavefront) -> float:
         """
         Calculate the radius of the beam at the current coordinate 
         of this wavefront. 
@@ -224,28 +230,30 @@ class GaussianWavefront(dLux.Wavefront):
             optical axis.
         """
         # TODO: Implement this. 
+        return self.get_beam_waist_radius() * np.sqrt(
+            1 + (self.get_position() / self.rayleigh_distance()) ** 2)
 
 
 
     # TODO: Determine where this fits into poppy. This implements 
     # (56) from the Lawrence book. 
-    def waist_radius(self: Wavefront) -> float:
-        """
-        The radius of the beam at the waist.
-
-        Returns
-        -------
-        waist_radius : float
-            The radius of the beam at the waist in metres.
-        """
-        return self.get_beam_radius() / \
-            np.sqrt(1 + (self.rayleigh_distance() \
-                / self.get_beam_radius()) ** 2)
+#    def calculate_beam_waist_radius(self: Wavefront) -> float:
+#        """
+#        The radius of the beam at the waist.
+#
+#        Returns
+#        -------
+#        waist_radius : float
+#            The radius of the beam at the waist in metres.
+#        """
+#        return self.get_beam_radius() / \
+#            np.sqrt(1 + (self.rayleigh_distance() \
+#                / self.get_beam_radius()) ** 2)
 
 
     # Confirm the behaviour is correct. Maps accros to r_c in the 
     # poppy code. 
-    def calculate_phase_radius(self: Wavefront) -> float:
+    def get_phase_radius(self: Wavefront) -> float:
         """
         Calculate the phase radius of the wavefront at its current 
         position. 
@@ -300,7 +308,7 @@ class GaussianWavefront(dLux.Wavefront):
             self, phase_radius, is_leaf = lambda leaf : leaf is None)
 
 
-    def set_beam_radius(self : Wavefront, 
+    def set_beam_waist_radius(self : Wavefront, 
             beam_radius : float) -> Wavefront:
         """
         Mutator for the `beam_radius`.
@@ -316,7 +324,7 @@ class GaussianWavefront(dLux.Wavefront):
             A modified Wavefront with the new beam_radius.
         """
         return eqx.tree_at(
-            lambda wavefront : wavefront.beam_radius, self, beam_radius,
+            lambda wavefront : wavefront.beam_waist_radius, self, beam_radius,
             is_leaf = lambda leaf : leaf is None)
 
  
@@ -349,6 +357,41 @@ class GaussianPropagator(dLux.FixedSamplingPropagator):
         super().__init__(np.sign(distance) > 0)
 
 
+    def _propagate(self : Propagator, wavefront : Matrix) -> Matrix: 
+        """
+        Propagate the wave intelligently aware of the inverse-ness.
+    
+        Parameters
+        ----------
+        wavefront : Matrix
+            The electric field of the wavefront that is to be
+            propagated. 
+
+        Returns
+        -------
+        wavefront : Matrix
+            The wavefront fourier transform but not normalised. 
+        """
+        field = jax.lax.cond(self.is_inverse(),
+            lambda wavefront : \
+                self._inverse_fourier_transform(wavefront),
+            lambda wavefront : \
+                self._fourier_transform(wavefront),
+            wavefront)
+
+        return field
+
+
+    def get_distance(self : Propagator) -> float:
+        """
+        Returns
+        -------
+        distance : float, meters
+            The distance that the this propagator moves the wavefront.
+        """
+        return self.distance
+
+
     # TODO: Note that the new pixel_scale should be calculated here. 
     def get_pixel_scale_out(self: Wavefront) -> float:
         """
@@ -366,13 +409,13 @@ class GaussianPropagator(dLux.FixedSamplingPropagator):
         """
         number_of_pixels = wavefront.number_of_pixels()
         new_pixel_scale = wavefront.get_wavelength() * np.abs(
-            wavefront.get_position() + self.distance) / \
+            wavefront.get_position() + self.get_distance()) / \
             number_of_pixels / wavefront.get_pixel_scale()  
         return new_pixel_scale 
 
 
     def planar_to_planar(self : Propagator, 
-            wavefront: Wavefront) -> Wavefront:
+            wavefront: Wavefront, distance : float) -> Wavefront:
         """
         Modifies the state of the wavefront by propagating a planar 
         wavefront to a planar wavefront. 
@@ -382,8 +425,9 @@ class GaussianPropagator(dLux.FixedSamplingPropagator):
         wavefront : Wavefront
             The wavefront to propagate. Must be `Wavefront`
             or a subclass. 
-        distance : float, meters
-            The distance of the propagation.
+        distance : float, meters 
+            The distance to propagate the wavefront in this 
+            regime. 
 
         Returns
         -------
@@ -407,8 +451,7 @@ class GaussianPropagator(dLux.FixedSamplingPropagator):
 
 
     def waist_to_spherical(self : Propagator, 
-            wavefront: Wavefront, 
-            distance: float) -> Wavefront:
+            wavefront: Wavefront, distance : float) -> Wavefront:
         """
         Modifies the state of the wavefront by propagating it from 
         the waist of the gaussian beam to a spherical wavefront. 
@@ -418,8 +461,8 @@ class GaussianPropagator(dLux.FixedSamplingPropagator):
         wavefront : Wavefront
             The `Wavefront` that is getting propagated. Must be either 
             a `Wavefront` or a valid subclass.
-        distance : float, meters 
-            The distance of the propagation.
+        distance : float, meters     
+            The distance to propagate the wavefront under this regime. 
 
         Returns 
         -------
@@ -431,7 +474,7 @@ class GaussianPropagator(dLux.FixedSamplingPropagator):
 
         # NOTE: normalisation constant exists higher up as well.  
         fourier_transform = \
-            wavefront.quadratic_phase_factor(self.get_distance()) *\
+            wavefront.quadratic_phase_factor(distance) *\
             self._propagate(field)
 
 #        fourier_transform = jax.lax.cond(np.sign(distance) > 0, 
@@ -453,7 +496,7 @@ class GaussianPropagator(dLux.FixedSamplingPropagator):
 
 
     def spherical_to_waist(self : Propagator, 
-            wavefront: Wavefront, distance: float) -> Wavefront:
+            wavefront: Wavefront, distance : float) -> Wavefront:
         """
         Modifies the state of the wavefront by propagating it from 
         a spherical wavefront to the waist of the Gaussian beam. 
@@ -464,7 +507,7 @@ class GaussianPropagator(dLux.FixedSamplingPropagator):
             The `Wavefront` that is getting propagated. Must be either 
             a `Wavefront` or a direct subclass.
         distance : float, meters
-            The distance of propagation in metres.
+            The distance to propagate the wavefront under this regime.
 
         Returns
         -------
@@ -472,8 +515,7 @@ class GaussianPropagator(dLux.FixedSamplingPropagator):
             The `wavefront` propagated by distance. 
         """
         coefficient = 1 / 1j / wavefront.get_wavelength() / \
-            distance * wavefront.quadratic_phase_factor(
-                self.get_distance())
+            distance * wavefront.quadratic_phase_factor(distance)
 
         # NOTE: Uses the standard normalising factor in _propagate
         # this may cause normalisation issues. 
@@ -487,7 +529,7 @@ class GaussianPropagator(dLux.FixedSamplingPropagator):
         return wavefront\
             .update_phasor(new_amplitude, new_phase)\
             .set_position(wavefront.get_position() + \
-                self.get_distance())
+                distance)
 
 
     def outside_to_outside(self : Wavefront, 
@@ -567,7 +609,7 @@ class GaussianPropagator(dLux.FixedSamplingPropagator):
         wavefront : Wavefront
             The `Wavefront` propagated by `distance`
         """
-        return self.planar_to_planar(wavefront)
+        return self.planar_to_planar(wavefront, self.get_distance())
 
 
     def inside_to_outside(self : Propagator, 
@@ -643,7 +685,7 @@ class GaussianPropagator(dLux.FixedSamplingPropagator):
         new_wavefront = jax.lax.switch(decision_index, 
             [self.inside_to_inside, self.inside_to_outside,
             self.outside_to_inside, self.outside_to_outside],
-            wavefront, self.distance) 
+            wavefront) 
 
         parameters["Wavefront"] = new_wavefront
         return parameters

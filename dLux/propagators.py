@@ -79,11 +79,12 @@ import jax
 import equinox as eqx
 import typing
 
-Array = typing.NewType("Array", object)
-Wavefront = typing.NewType("Wavefront", object)
-GaussianWavefront = typing.NewType("GaussianWavefront", object)
-Propagator = typing.NewType("Propagator", object)
-GaussianPropagator = typing.NewType("GaussianPropagator", object)
+Array = typing.TypeVar("Array")
+Matrix = typing.TypeVar("Matrix")
+Wavefront = typing.TypeVar("Wavefront")
+GaussianWavefront = typing.TypeVar("GaussianWavefront")
+Propagator = typing.TypeVar("Propagator")
+GaussianPropagator = typing.TypeVar("GaussianPropagator")
 
 
 class Propagator(eqx.Module):     
