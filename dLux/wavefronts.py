@@ -1,5 +1,6 @@
 import equinox as eqx 
 import jax.numpy as np
+import jax
 import typing
 
 
@@ -579,14 +580,14 @@ class Wavefront(eqx.Module):
             based on a linear interpolation.
         """
         if not real_imaginary:
-            new_amplitude = map_coordinates(
+            new_amplitude = jax.scipy.ndimage.map_coordinates(
                 self.amplitude, coordinates, order=1)
-            new_phase = map_coordinates(
+            new_phase = jax.scipy.ndimage.map_coordinates(
                 self.phase, coordinates, order=1)
         else:
-            real = map_coordinates(
+            real = jax.scipy.ndimage.map_coordinates(
                 self.get_real(), coordinates, order=1)
-            imaginary = map_coordinates(
+            imaginary = jax.scipy.ndimage.map_coordinates(
                 self.get_imaginary(), coordinates, order=1)
             new_amplitude = np.hypot(real, imaginary)
             new_phase = np.arctan2(imaginary, real)
@@ -625,7 +626,7 @@ class Wavefront(eqx.Module):
         
         centre = (number_of_pixels_in - 1) / 2
         new_centre = (number_of_pixels_out - 1) / 2
-        pixels = ratio * (-new_centre, new_centre, number_of_pixels_out) + centre
+        pixels = ratio * np.linspace(-new_centre, new_centre, number_of_pixels_out) + centre
         x_pixels, y_pixels = np.meshgrid(pixels, pixels)
         coordinates = np.array([y_pixels, x_pixels])
         new_amplitude, new_phase = self.interpolate(
@@ -931,36 +932,41 @@ class GaussianWavefront(Wavefront):
         The radius of the beam. 
     phase_radius : float, unitless
         The phase radius of the gaussian beam.
+    location_of_waist : float, meters
+        The position of the beam waist along the optical axis. 
     """
     position : float 
     beam_radius : float
     phase_radius : float
+    location_of_waist : float
 
 
     def __init__(self : GaussianWavefront, 
             offset : Array,
-            wavelength : float) -> GaussianWavefront:
+            wavelength : float,
+            beam_radius : float,
+            position : float = 0.) -> GaussianWavefront:
         """
         Creates a wavefront with an empty amplitude and phase 
         arrays but of a given wavelength and phase offset. 
+        Assumes that the beam starts at the waist following from 
+        the `poppy` convention.
 
         Parameters
         ----------
-        beam_radius : float
+        beam_radius : float, meters
             Radius of the beam at the initial optical plane.
         wavelength : float, meters
             The wavelength of the `Wavefront`.
         offset : Array, radians
             The (x, y) angular offset of the `Wavefront` from 
             the optical axis.
-        phase_radius :  float
-            The phase radius of the GuasianWavefront. This is a unitless
-            quantity. 
         """
         super().__init__(wavelength, offset)
-        self.beam_radius = None
-        self.phase_radius = np.inf
-        self.position = None 
+        self.beam_radius = np.asarray(beam_radius).astype(float)
+        self.position = np.asarray(position).astype(float)
+        self.phase_radius = self.calculate_phase_radius()
+        self.location_of_waist = self.position
 
 
     def get_position(self : GaussianWavefront) -> float:
@@ -1094,10 +1100,13 @@ class GaussianWavefront(Wavefront):
             / self.get_wavelength() / distance)
 
 
-    def location_of_waist(self: GaussianWavefront) -> float:
+    # NOTE: This should only be updated after passing through 
+    # an optic like a quadratic lens. 
+    def calculate_location_of_waist(self: GaussianWavefront) -> float:
         """
         Calculates the position of the waist along the direction of 
-        propagation based of the current state of the wave.
+        propagation based of the current state of the wave. This should 
+        only be called after passing through a lens. 
 
         Returns
         -------
@@ -1120,7 +1129,23 @@ class GaussianWavefront(Wavefront):
         """
         return self.get_beam_radius() / \
             np.sqrt(1 + (self.rayleigh_distance() \
-                / self.get_beam_radius()) ** 2) 
+                / self.get_beam_radius()) ** 2)
+
+
+    # Confirm the behaviour is correct. Maps accros to r_c in the 
+    # poppy code. 
+    def calculate_phase_radius(self: GaussianWavefront) -> float:
+        """
+        Calculate the phase radius of the wavefront at its current 
+        position. 
+
+        Returns
+        -------
+        phase_radius : float, radians
+            The phase radius of the beam at its current position.
+        """
+        z = self.position - self.location_of_waist()
+        return z + self.rayleigh_distance() ** 2 / z
 
 
     def calculate_pixel_scale(self: GaussianWavefront, position: float) -> None:
