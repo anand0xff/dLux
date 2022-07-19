@@ -965,8 +965,8 @@ class GaussianWavefront(Wavefront):
         super().__init__(wavelength, offset)
         self.beam_radius = np.asarray(beam_radius).astype(float)
         self.position = np.asarray(position).astype(float)
-        self.phase_radius = self.calculate_phase_radius()
         self.location_of_waist = self.position
+        self.phase_radius = self.calculate_phase_radius()
 
 
     def get_position(self : GaussianWavefront) -> float:
@@ -1118,6 +1118,21 @@ class GaussianWavefront(Wavefront):
             self.rayleigh_distance()) ** 2)
 
 
+    def waist_radius(self : GaussianWavefront) -> float:
+        """
+        Calculate the radius of the beam at the current coordinate 
+        of this wavefront. 
+
+        Returns
+        -------
+        waist_radius : float, meters
+            The waist radius at the current position along the 
+            optical axis.
+        """
+        # TODO: Implement this. 
+
+    # TODO: Determine where this fits into poppy. This implements 
+    # (56) from the Lawrence book. 
     def waist_radius(self: GaussianWavefront) -> float:
         """
         The radius of the beam at the waist.
@@ -1144,7 +1159,7 @@ class GaussianWavefront(Wavefront):
         phase_radius : float, radians
             The phase radius of the beam at its current position.
         """
-        z = self.position - self.location_of_waist()
+        z = self.position - self.location_of_waist
         return z + self.rayleigh_distance() ** 2 / z
 
 
@@ -1188,7 +1203,7 @@ class GaussianWavefront(Wavefront):
             otherwise.
         """
         return np.abs(self.get_position() + distance - \
-            self.location_of_waist()) <= self.rayleigh_distance()
+            self.location_of_waist) <= self.rayleigh_distance()
 
 
     def set_phase_radius(self : GaussianWavefront, 

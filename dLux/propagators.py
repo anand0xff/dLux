@@ -1311,8 +1311,8 @@ class GaussianPropagator(eqx.Module):
             The new `Wavefront` propgated by distance. 
         """
         from_waist_displacement = wavefront.get_position() \
-            + distance - wavefront.location_of_waist()
-        to_waist_displacement = wavefront.location_of_waist() \
+            + distance - wavefront.location_of_waist
+        to_waist_displacement = wavefront.location_of_waist \
             - wavefront.get_position()
 
         wavefront_at_waist = self.spherical_to_waist(
@@ -1343,8 +1343,8 @@ class GaussianPropagator(eqx.Module):
             The `Wavefront` propagated by `distance` 
         """
         from_waist_displacement = wavefront.position + distance - \
-            wavefront.location_of_waist()
-        to_waist_displacement = wavefront.location_of_waist() - \
+            wavefront.location_of_waist
+        to_waist_displacement = wavefront.location_of_waist - \
             wavefront.get_position()
 
         wavefront_at_waist = self.planar_to_planar(
@@ -1400,8 +1400,8 @@ class GaussianPropagator(eqx.Module):
             The `Wavefront` propagated `distance`.
         """
         from_waist_displacement = wavefront.get_position() + \
-            distance - wavefront.location_of_waist()
-        to_waist_displacement = wavefront.location_of_waist() - \
+            distance - wavefront.location_of_waist
+        to_waist_displacement = wavefront.location_of_waist - \
             wavefront.get_position()
 
         wavefront_at_waist = self.planar_to_planar(
