@@ -924,6 +924,7 @@ class PhysicalFresnel(VariableSamplingPropagator):
             The number of diffraction fringes visible in the plane of 
             propagation.
         """
+        # TODO: Should use super() here.
         propagation_distance = self.get_focal_length() + self.get_focal_shift()
         focal_ratio = self.get_focal_length() / propagation_distance
 

@@ -42,7 +42,6 @@ class GaussianWavefront(dLux.Wavefront):
     def quadratic_phase(self : Wavefront, distance : float) -> Matrix:
         positions = self.get_pixel_positions()
         x, y = positions[0], positions[1]
-        # NOTE: Need to work out when and when not to use a shift.
         return np.exp(1.j * np.pi * (x ** 2 + y ** 2) \
                 / distance / self.get_wavelength())
 
@@ -52,23 +51,12 @@ class GaussianWavefront(dLux.Wavefront):
     def transfer(self : Wavefront, distance : float) -> Matrix:
         positions = self.get_pixel_positions()
         x, y = positions[0], positions[1]
-        # NOTE: This just seems to be a normalisation of the radial 
-        # coordinates. 
-#        rho_squared = np.fft.fftshift(
-#            (x / (self.pixel_scale ** 2 \
-#                * self.number_of_pixels())) ** 2 + \
-#            (y / (self.pixel_scale ** 2 \
-#                * self.number_of_pixels())) ** 2)
         rho_squared = \
             (x / (self.pixel_scale ** 2 \
                 * self.number_of_pixels())) ** 2 + \
             (y / (self.pixel_scale ** 2 \
                 * self.number_of_pixels())) ** 2
         # Transfer Function of diffraction propagation eq. 22, eq. 87
-        # NOTE: I need to check if this behaviour is implemented in 
-        # the wavefront as transfer function. 
-        # NOTE: deleted the np.fft.fftshift here because it is in 
-        # the fourier transform
         return np.exp(1.j * np.pi * self.wavelength * \
                 distance * rho_squared)
 
@@ -271,182 +259,116 @@ class GaussianPropagator(eqx.Module):
     # Coordiantes must be in meters for the propagator
     def __call__(self : Propagator, wave : Wavefront) -> Wavefront:
         # NOTE: need to understand this mystery. 
-        field = np.fft.fftshift(wave.get_complex_form())
-        wave = wave.update_phasor(np.abs(field), np.angle(field))
-
-#        wave = jax.lax.cond(
-#            wave.spherical,
-#            lambda : jax.lax.cond(
-#                wave.is_planar_after(self.distance),
-#                lambda : self._outside_to_inside(wave),
-#                lambda : self._outside_to_outside(wave)),
-#            lambda : jax.lax.cond(
-#                wave.is_planar_after(self.distance),
-#                lambda : self._inside_to_inside(wave),
-#                lambda : self._inside_to_outside(wave)))
+        # field = np.fft.fftshift(wave.get_complex_form())
+        # wave = wave.update_phasor(np.abs(field), np.angle(field))
 
         wave = jax.lax.switch(
             2 * wave.spherical + wave.is_planar_after(self.distance),
             [self._outside_to_inside, self._outside_to_outside,
             self._inside_to_inside, self._inside_to_outside], wave) 
 
-#        if not wave.spherical:
-#            if wave.is_planar_after(self.distance):
-#                wave = self._inside_to_inside(wave)
-#            else:
-#                wave = self._inside_to_outside(wave)
-#        else:
-#            if wavefront.is_planar_after(self.distance):
-#                wave = self._outside_to_inside(wave)
-#            else:
-#                wave = self._outside_to_outside(wave)
-
-
-        field = np.fft.fftshift(wave.get_complex_form())
-        wave = wave.update_phasor(np.abs(field), np.angle(field))
+        # field = np.fft.fftshift(wave.get_complex_form())
+        # wave = wave.update_phasor(np.abs(field), np.angle(field))
         return wave
 
 
-#    def __imul__(self, optic):
-#        """Multiply a Wavefront by an OpticalElement or scalar"""
-#        if isinstance(optic, QuadraticLens):
-#            # Special case: if we have a lens, call the routine for that,
-#            # which will modify the properties of this wavefront more fundamentally
-#            # than most other optics, adjusting beam parameters and so forth
-#            self.apply_lens_power(optic)
-#            return self
-#        elif isinstance(optic, FixedSamplingImagePlaneElement):
-#            # Special case: if we have an FPM, call the routine for that,
-#            # which will apply an amplitude transmission to the wavefront. 
-#            self.apply_image_plane_fftmft(optic)
-#            return self
-#        else:
-#            # Otherwise fall back to the parent class
-#            return super(FresnelWavefront, self).__imul__(optic)
-#
-#    def apply_lens_power(self, optic, ignore_wavefront=False):
-#        """
-#        Adds lens wavefront curvature to the wavefront
-#        corresponding to the lens' focal length f_l, and updates the
-#        Gaussian beam parameters of the wavefront.
-#        Parameters
-#        ----------
-#        optic : QuadraticLens
-#            An optic
-#        ignore_wavefront : boolean
-#            If True then only gaussian beam propagation parameters will be updated and the wavefront surface will not
-#            be calculated. Useful for quick calculations of gaussian laser beams
-#        """
-#
-#        _log.debug("------ Applying Lens: " + str(optic.name) + " ------")
-#        _log.debug("  Pre-Lens Beam Parameters: " + self.param_str)
-#
-#        # calculate beam radius at current surface
-#        spot_radius = self.spot_radius()
-#        _log.debug("  Beam radius at " + str(optic.name) + " ={0:0.2e}".format(spot_radius))
-#
-#        # Is the incident beam planar or spherical?
-#        # We decided based on whether the last waist is outside the rayleigh distance.
-#        #  I.e. here we neglect small curvature just away from the waist
-#        # Based on that, determine the radius of curvature of the output beam
-#        if np.abs(self.z_w0 - self.z) > self.rayleigh_factor * self.z_r:
-#            _log.debug("spherical beam")
-#            _log.debug(self.param_str)
-#            r_input_beam = self.z - self.z_w0
-#            r_output_beam = 1.0 / (1.0 / self.r_c() - 1.0 / optic.fl)
-#            _log.debug(
-#                " input curved wavefront and " + str(optic.name) + " has output beam curvature of ={0:0.2e}".format(
-#                    r_output_beam))
-#        else:
-#            r_input_beam = np.inf * u.m
-#            # we are at a focus or pupil, so the new optic is the only curvature of the beam
-#            r_output_beam = -1 * optic.fl
-#            _log.debug(
-#                " input flat wavefront and " + str(optic.name) + " has output beam curvature of ={0:0.2e}".format(
-#                    r_output_beam))
-#
-#        # update the wavefront parameters to the post-lens beam waist
-#        if self.r_c() == optic.fl:
-#            self.z_w0 = self.z
-#            self.w_0 = spot_radius
-#            _log.debug(str(optic.name) + " has a flat output wavefront")
-#        else:
-#            self.z_w0 = -r_output_beam / (
-#                1.0 + (self.wavelength * r_output_beam / (np.pi * spot_radius ** 2)) ** 2) + self.z
-#            self.w_0 = spot_radius / np.sqrt(1.0 + (np.pi * spot_radius ** 2 / (self.wavelength * r_output_beam)) ** 2)
-#            _log.debug(str(optic.name) + " has a curvature of ={0:0.2e}".format(r_output_beam))
-#            _log.debug(str(optic.name) + " has a curved output wavefront, with waist at {}".format(self.z_w0))
-#
-#        _log.debug("Post Optic Parameters:" + self.param_str)
-#
-#        # Update the focal length of the beam. This is closely related to but tracked separately from
-#        # the beam waist and radius of curvature; we keep track of it to use in optional conversion
-#        # of coordinates to angular units.
-#        if not np.isfinite(self.focal_length):
-#            self.focal_length = 1 * optic.fl
-#            _log.debug("Set output beam focal length to {}".format(self.focal_length))
-#        else:
-#            # determine magnification as the change in curvature of this optic
-#            mag = r_output_beam / r_input_beam
-#            self.focal_length *= mag
-#            _log.debug("Magnification: {}  from R_in = {}, R_out = {}".format(mag, r_input_beam, r_output_beam))
-#            _log.debug("Output beam focal length is now {}".format(self.focal_length))
-#
-#        self.waists_z.append(self.z_w0.to(u.m).value)
-#        self.waists_w0.append(self.w_0.to(u.m).value)
-#
-#        # update wavefront location:
-#        if optic.planetype != PlaneType.unspecified:
-#            self.planetype = optic.planetype
-#
-#        if ignore_wavefront:
-#            # What we have done above is sufficient for Gaussian beam propagation,
-#            # and if that's all we're interested in we can skip updating the
-#            # wavefront array.
-#            _log.debug("------ Optic: " + str(optic.name) + " applied, for Gaussian beam parameters only ------")
-#            return
-#
-#        # Now we need to figure out the phase term to apply to the wavefront
-#        # data array
-#        if not self.spherical:
-#            if np.abs(self.z_w0 - self.z) < self.z_r:
-#                _log.debug('Near-field, Plane-to-Plane Propagation.')
-#                z_eff = 1 * optic.fl
-#
-#            else:
-#                # find the radius of curvature of the lens output beam
-#                # curvatures are multiplicative exponentials
-#                # e^(1/z) = e^(1/x)*e^(1/y) = e^(1/x+1/y) -> 1/z = 1/x + 1/y
-#                # z = 1/(1/x+1/y) = xy/x+y
-#                z_eff = 1.0 / (1.0 / optic.fl + 1.0 / (self.z - self.z_w0))
-#                _log.debug('Inside Rayleigh distance to Outside Rayleigh distance.')
-#
-#                self.spherical = True
-#
-#        else:  # spherical input wavefront
-#            if np.abs(self.z_w0 - self.z) > self.z_r:
-#                _log.debug('Spherical to Spherical wavefront propagation.')
-#                _log.debug("1/fl={0:0.4e}".format(1.0 / optic.fl))
-#                _log.debug("1.0/(R_input_beam)={0:0.4e}".format(1.0 / r_input_beam))
-#                _log.debug("1.0/(self.z-self.z_w0)={0:0.4e}".format(1.0 / (self.z - self.z_w0)))
-#
-#                if (self.z - self.z_w0) == 0:
-#                    z_eff = 1.0 / (1.0 / optic.fl + 1.0 / (self.z - self.z_w0))
-#                else:
-#                    z_eff = 1.0 / (1.0 / optic.fl + 1.0 / (self.z - self.z_w0) - 1.0 / r_input_beam)
-#
-#            else:
-#                _log.debug('Spherical to Planar.')
-#                z_eff = 1.0 / (1.0 / optic.fl - 1.0 / r_input_beam)
-#                self.spherical = False
-#
-#        # Apply phase to the wavefront array
-#        effective_optic = QuadPhase(-z_eff, name=optic.name)
-#        self *= effective_optic
-#
-#        _log.debug("------ Optic: " + str(optic.name) + " applied ------")
-#
-#
+    def __imul__(self, optic):
+        """Multiply a Wavefront by an OpticalElement or scalar"""
+        if isinstance(optic, QuadraticLens):
+            # Special case: if we have a lens, call the routine for that,
+            # which will modify the properties of this wavefront more fundamentally
+            # than most other optics, adjusting beam parameters and so forth
+            self.apply_lens_power(optic)
+            return self
+        elif isinstance(optic, FixedSamplingImagePlaneElement):
+            # Special case: if we have an FPM, call the routine for that,
+            # which will apply an amplitude transmission to the wavefront. 
+            self.apply_image_plane_fftmft(optic)
+            return self
+        else:
+            # Otherwise fall back to the parent class
+            return super(FresnelWavefront, self).__imul__(optic)
+
+
+class GaussianLens(eqx.Module):
+    focal_length : float
+
+    def __init__(self : Layer, focal_length : float) -> Layer:
+        self.focal_length = np.asarray(focal_length).astype(float)
+
+
+    def __call__(self : Layer, wave : Wavefront) -> Wavefront:
+        # calculate beam radius at current surface
+        radius = wave.radius()
+
+        # Is the incident beam planar or spherical?
+        # We decided based on whether the last waist is outside the rayleigh distance.
+        #  I.e. here we neglect small curvature just away from the waist
+        # Based on that, determine the radius of curvature of the output beam
+        from_waist_displacement = np.abs(wave.waist_position - wave.position)
+        from_waist_threshold = wave.rayleigh_factor * wave.rayleigh_distance()
+        spherical = from_waist_displacement > from_waist_threshold
+
+        # NOTE: True case
+        # So these are just the curvatures. The first one assumes a sphere 
+        # centred at the waist_location. 
+        # NOTE: False case
+        # we are at a focus or pupil so the new optic is the only curvature
+        in_curve, out_curve = jax.lax.cond(spherical,
+            lambda : (from_waist_displacement,
+                1. / (1. / wave.curvature() - 1. / self.focal_length)),
+            lambda : (np.inf, -1. * self.focal_length))
+
+        # NOTE: TODO: From here
+        # update the wavefront parameters to the post-lens beam waist
+        if self.r_c() == optic.fl:
+            self.z_w0 = self.z
+            self.w_0 = spot_radius
+        else:
+            self.z_w0 = -r_output_beam / (
+                1.0 + (self.wavelength * r_output_beam / (np.pi * spot_radius ** 2)) ** 2) + self.z
+            self.w_0 = spot_radius / np.sqrt(1.0 + (np.pi * spot_radius ** 2 / (self.wavelength * r_output_beam)) ** 2)
+
+        # Update the focal length of the beam. This is closely related to but tracked separately from
+        # the beam waist and radius of curvature; we keep track of it to use in optional conversion
+        # of coordinates to angular units.
+        if not np.isfinite(self.focal_length):
+            self.focal_length = 1 * optic.fl
+        else:
+            # determine magnification as the change in curvature of this optic
+            mag = r_output_beam / r_input_beam
+            self.focal_length *= mag
+        
+        # Now we need to figure out the phase term to apply to the wavefront
+        # data array
+        if not self.spherical:
+            if np.abs(self.z_w0 - self.z) < self.z_r:
+                z_eff = 1 * optic.fl
+
+            else:
+                # find the radius of curvature of the lens output beam
+                # curvatures are multiplicative exponentials
+                # e^(1/z) = e^(1/x)*e^(1/y) = e^(1/x+1/y) -> 1/z = 1/x + 1/y
+                # z = 1/(1/x+1/y) = xy/x+y
+                z_eff = 1.0 / (1.0 / optic.fl + 1.0 / (self.z - self.z_w0))
+                self.spherical = True
+
+        else:  # spherical input wavefront
+            if np.abs(self.z_w0 - self.z) > self.z_r:
+                if (self.z - self.z_w0) == 0:
+                    z_eff = 1.0 / (1.0 / optic.fl + 1.0 / (self.z - self.z_w0))
+                else:
+                    z_eff = 1.0 / (1.0 / optic.fl + 1.0 / (self.z - self.z_w0) - 1.0 / r_input_beam)
+
+            else:
+                z_eff = 1.0 / (1.0 / optic.fl - 1.0 / r_input_beam)
+                self.spherical = False
+
+        # Apply phase to the wavefront array
+        effective_optic = QuadPhase(-z_eff, name=optic.name)
+        self *= effective_optic
+
+
 #    def apply_image_plane_fftmft(self, optic):
 #        """
 #        Apply a focal plane mask using fft and mft methods to highly sample at the focal plane.
