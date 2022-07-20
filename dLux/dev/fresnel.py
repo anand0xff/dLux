@@ -13,8 +13,8 @@ Vector = typing.TypeVar("Vector")
 
 
 class GaussianWavefront(dLux.Wavefront):
-    angular : bool = False
-    spherical : bool = False
+    angular : bool
+    spherical : bool
     waist_radius : float 
     position : float
     waist_position : float
@@ -27,38 +27,50 @@ class GaussianWavefront(dLux.Wavefront):
             wavelength : float,
             beam_radius : float,
             rayleigh_factor : float = 2.) -> Wavefront:
-        super(GaussianWavefront, self).__init__(offset, wavelength)
+        super(GaussianWavefront, self).__init__(wavelength, offset)
         self.waist_radius = np.asarray(beam_radius).astype(float)  
         self.position = np.asarray(0.).astype(float)
         self.waist_position = np.asarray(0.).astype(float)
         self.rayleigh_factor = np.asarray(rayleigh_factor).astype(float)
         self.focal_length = np.inf 
+        self.angular = False
+        self.spherical = False
 
 
     # NOTE: This also needs an ..._after name. I could use something
     # like quadratic_phase_after() or phase_after() 
     def quadratic_phase(self : Wavefront, distance : float) -> Matrix:
-        x, y = wavefront.get_pixel_positions()
+        positions = self.get_pixel_positions()
+        x, y = positions[0], positions[1]
         # NOTE: Need to work out when and when not to use a shift.
         return np.exp(1.j * np.pi * (x ** 2 + y ** 2) \
-                / distance / wavefront.get_wavelength())
+                / distance / self.get_wavelength())
 
 
     # NOTE: This is plane_to_plane transfer function. I should give it
     # a better name like fraunhofer_phase_after()
     def transfer(self : Wavefront, distance : float) -> Matrix:
-        x, y = self.get_pixel_positions() 
+        positions = self.get_pixel_positions()
+        x, y = positions[0], positions[1]
         # NOTE: This just seems to be a normalisation of the radial 
         # coordinates. 
-        rho_sqruared = np.fft.fftshift(
+#        rho_squared = np.fft.fftshift(
+#            (x / (self.pixel_scale ** 2 \
+#                * self.number_of_pixels())) ** 2 + \
+#            (y / (self.pixel_scale ** 2 \
+#                * self.number_of_pixels())) ** 2)
+        rho_squared = \
             (x / (self.pixel_scale ** 2 \
                 * self.number_of_pixels())) ** 2 + \
             (y / (self.pixel_scale ** 2 \
-                * self.number_of_pixels())) ** 2)
+                * self.number_of_pixels())) ** 2
         # Transfer Function of diffraction propagation eq. 22, eq. 87
         # NOTE: I need to check if this behaviour is implemented in 
         # the wavefront as transfer function. 
-        return np.exp(-1.j * np.pi * self.wavelength * distance * rho_squared)
+        # NOTE: deleted the np.fft.fftshift here because it is in 
+        # the fourier transform
+        return np.exp(1.j * np.pi * self.wavelength * \
+                distance * rho_squared)
 
 
     def rayleigh_distance(self : Wavefront) -> float:
@@ -103,7 +115,7 @@ class GaussianWavefront(dLux.Wavefront):
     # or vice versa so it needs a much better name than current. 
     def pixel_scale_after(self : Wavefront, distance : float) -> Wavefront:
         pixel_scale = self.get_wavelength() * np.abs(distance) /\
-            (self.number_of_pixels() * self.get_pixel_scale()
+            (self.number_of_pixels() * self.get_pixel_scale())
         return eqx.tree_at(lambda wave : wave.pixel_scale,
             self, pixel_scale, is_leaf = lambda leaf : leaf is None)
 
@@ -127,6 +139,12 @@ class GaussianWavefront(dLux.Wavefront):
     #def set_focal_length(self : Wavefront, focal_length : float) -> Wavefront:
 
 
+    def get_pixel_positions(self : Wavefront) -> Tensor:
+        pixels = self.phase.shape[0]
+        positions = np.array(np.indices((pixels, pixels)) - pixels / 2.)
+        return self.pixel_scale * positions
+
+
 class GaussianPropagator(eqx.Module):
     distance : float
 
@@ -136,13 +154,17 @@ class GaussianPropagator(eqx.Module):
 
 
     def _fourier_transform(self : Propagator, field : Matrix) -> Matrix:
-        return np.fft.fftshift(np.fft.ifft2d(field))
+        # return np.fft.ifft2(field)
+        return 1 / field.shape[0] * np.fft.fftshift(np.fft.ifft2(field))
 
 
     def _inverse_fourier_transform(self : Propagator, field : Matrix) -> Matrix:
-        return np.fft.fft2d(np.fft.ifftshift(self.wavefront))
+        # return np.fft.fft2(field)
+        return field.shape[0] * np.fft.fft2(np.fft.ifftshift(field))
 
 
+    # NOTE: need to add in the standard FFT normalising factor
+    # as in the propagator. 
     def _propagate(self : Propagator, field : Matrix, 
             distance : float) -> Matrix:
         # NOTE: is this diagnosable directly from the stored parameter
@@ -160,7 +182,7 @@ class GaussianPropagator(eqx.Module):
             distance : float):
         # NOTE: Seriously need to change the name to get_field()
         field = self._fourier_transform(wavefront.get_complex_form())
-        field *= wavefront.transfer_function(distance)  # eq. 6.68
+        field *= wavefront.transfer(distance)  # eq. 6.68
         field = self._inverse_fourier_transform(field)
         # NOTE: wavefront.from_field is looking good right about now
         return wavefront\
@@ -181,7 +203,7 @@ class GaussianPropagator(eqx.Module):
         # SIGN CONVENTION: forward optical propagations want a positive sign in the complex exponential, which
         # numpy implements as an "inverse" FFT
         # NOTE: This all needs to be contained within a _propagate method
-        field = self._propagate(field)
+        field = self._propagate(field, distance)
         # NOTE: future release should look like 
         # TODO: rename wavefront -> wave internally for brevity
         # field = self._propagate(wave.quadratic_phase() * wave.field())
@@ -204,13 +226,13 @@ class GaussianPropagator(eqx.Module):
     def _spherical_to_waist(self : Propagator, wavefront : Wavefront,
             distance : float) -> Wavefront:
         # Lawrence eq. 89
-        field = self._propagate(wavefront.get_complex_form())
+        field = self._propagate(wavefront.get_complex_form(), distance)
         field *= np.fft.fftshift(wavefront.quadratic_phase(distance))
         return wavefront\
             .set_phase(np.angle(field))\
             .set_amplitude(np.abs(field))\
             .set_spherical(True)\
-            .pixel_scale_after(distance))\
+            .pixel_scale_after(distance)\
             .position_after(distance)
 
 
@@ -222,7 +244,7 @@ class GaussianPropagator(eqx.Module):
         start = wave.position
         end = wave.position + self.distance
         wave = self._plane_to_plane(wave, wave.waist_position - start)
-        wave = self._waist_to_spherical(wave, end - wavefront.waist_position)
+        wave = self._waist_to_spherical(wave, end - wave.waist_position)
         return wave
 
 
@@ -230,7 +252,7 @@ class GaussianPropagator(eqx.Module):
         start = wave.position
         end = wave.position + self.distance
         wave = self._spherical_to_waist(wave, wave.waist_position - start)
-        wave = self._plane_to_plane(wave, end - wavefront.waist_position)
+        wave = self._plane_to_plane(wave, end - wave.waist_position)
         return wave
 
 
@@ -249,19 +271,24 @@ class GaussianPropagator(eqx.Module):
     # Coordiantes must be in meters for the propagator
     def __call__(self : Propagator, wave : Wavefront) -> Wavefront:
         # NOTE: need to understand this mystery. 
-        field = np.fft.fftshift(wave.get_field())
+        field = np.fft.fftshift(wave.get_complex_form())
         wave = wave.update_phasor(np.abs(field), np.angle(field))
 
-        wave = jax.lax.cond(
-            wave.spherical,
-            lambda : jax.lax.cond(
-                wave.is_planar_after(self.distance),
-                lambda : self._outside_to_inside(wave),
-                lambda : self._outside_to_outside(wave)),
-            lambda : jax.lax.cond(
-                wave.is_planar_after(self.distance),
-                lambda : self._inside_to_inside(wave),
-                lambda : self._inside_to_outside(wave)))
+#        wave = jax.lax.cond(
+#            wave.spherical,
+#            lambda : jax.lax.cond(
+#                wave.is_planar_after(self.distance),
+#                lambda : self._outside_to_inside(wave),
+#                lambda : self._outside_to_outside(wave)),
+#            lambda : jax.lax.cond(
+#                wave.is_planar_after(self.distance),
+#                lambda : self._inside_to_inside(wave),
+#                lambda : self._inside_to_outside(wave)))
+
+        wave = jax.lax.switch(
+            2 * wave.spherical + wave.is_planar_after(self.distance),
+            [self._outside_to_inside, self._outside_to_outside,
+            self._inside_to_inside, self._inside_to_outside], wave) 
 
 #        if not wave.spherical:
 #            if wave.is_planar_after(self.distance):
