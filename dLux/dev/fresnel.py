@@ -292,6 +292,8 @@ class GaussianPropagator(eqx.Module):
 
 class GaussianLens(eqx.Module):
     focal_length : float
+    # TODO: Should this store its position in the optical system?
+    # No I don't think that it should. 
 
     def __init__(self : Layer, focal_length : float) -> Layer:
         self.focal_length = np.asarray(focal_length).astype(float)
@@ -319,15 +321,20 @@ class GaussianLens(eqx.Module):
                 1. / (1. / wave.curvature() - 1. / self.focal_length)),
             lambda : (np.inf, -1. * self.focal_length))
 
-        # NOTE: TODO: From here
         # update the wavefront parameters to the post-lens beam waist
-        if self.r_c() == optic.fl:
-            self.z_w0 = self.z
-            self.w_0 = spot_radius
+        if wave.curvature() == self.focal_length:
+            wave = wave\
+                .set_waist_position(wave.position)\
+                .set_waist_radius(radius)
         else:
-            self.z_w0 = -r_output_beam / (
-                1.0 + (self.wavelength * r_output_beam / (np.pi * spot_radius ** 2)) ** 2) + self.z
-            self.w_0 = spot_radius / np.sqrt(1.0 + (np.pi * spot_radius ** 2 / (self.wavelength * r_output_beam)) ** 2)
+            # eq. 56 from Lawrence et. al.
+            # NOTE: rayleigh_distance -> rayleigh?
+            curve_ratio = (out_curve / wave.rayleigh_distance()) ** 2
+            waist_position = - out_curve / (1. + curve_ratio) + wave.position
+            waist_radius = radius / np.sqrt(1. + 1. / curve_ratio)
+            wave = wave\
+                .set_waist_position(waist_position)\
+                .waist_radius(waist_radius)
 
         # Update the focal length of the beam. This is closely related to but tracked separately from
         # the beam waist and radius of curvature; we keep track of it to use in optional conversion
