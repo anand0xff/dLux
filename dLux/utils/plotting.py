@@ -52,3 +52,57 @@ def plot_batch(batch, filename=None, dpi=96, ncols=4, apply_det=False, rmask=Fal
         return
     else:
         plt.show()
+        
+        
+def compare_psfs(psfs, names, image=True, logim=False, resids=True, close=False, edge=None):
+    
+    nims = len(psfs)
+    
+    c = psfs[0].shape[0]//2
+    if edge is None:
+        s = c
+    else:
+        s = c - edge
+    psfs = np.array([psf[c-s:c+s, c-s:c+s] for psf in psfs])
+    
+    if image:
+        plt.figure(figsize=(5*nims, 4))
+        plt.suptitle("$\sqrt{PSF}$")
+        for i in range(nims):
+            plt.subplot(1, nims, i+1)
+            plt.title("peak: {}: {:.5f}".format(names[i], 1e6*psfs[i].max()))
+            plt.imshow(psfs[i]**0.5)
+            plt.colorbar()
+        plt.show()
+    
+    if logim:
+        plt.figure(figsize=(5*nims, 4))
+        plt.suptitle("log10(PSF)")
+        for i in range(nims):
+            plt.subplot(1, nims, i+1)
+            plt.title("{}: {:.2f}".format(names[i], 1e6*psfs[i].max()))
+            plt.imshow(np.log10(psfs[i]))
+            plt.colorbar()
+        plt.show()
+
+    if resids:
+        plt.figure(figsize=(5*nims, 4))
+        plt.suptitle("Resdiuals")
+        for i in range(nims):
+            res = psfs[0] - psfs[i]
+            val = np.array([np.abs(res.min()), res.max()]).max()
+            plt.subplot(1, nims, i+1)
+            plt.title("SSE: {}".format(np.sum(res**2)))
+            plt.imshow(psfs[0] - psfs[i], vmin=-val, vmax=val, cmap='seismic')
+            plt.colorbar()
+        plt.show()
+    
+    if close:
+        plt.figure(figsize=(5*nims, 4))
+        plt.suptitle("isclose allclose")
+        for i in range(nims):
+            plt.subplot(1, nims, i+1)
+            plt.title("allclose: {}".format(np.allclose(psfs[0], psfs[i])))
+            plt.imshow(np.isclose(psfs[0], psfs[i]))
+            plt.colorbar()
+        plt.show()
