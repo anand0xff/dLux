@@ -55,11 +55,11 @@ def get_ppf(wavels,
 # Transformations
 def rad2arcsec(values):
     # return values * 3600 * 180 / np.pi
-    return 3600 * rad2deg(values)
+    return deg2arcsec(rad2deg(values))
 
 def arcsec2rad(values):
     # return values * np.pi / (3600 * 180)
-    return values * 3600 * 180 / np.pi
+    return deg2rad(arcsec2deg(values))
 
 def cart2polar(x, y):
     return np.array([np.hypot(x, y), np.arctan2(y, x)])
@@ -72,6 +72,12 @@ def rad2deg(values):
 
 def deg2rad(values):
     return values * np.pi / 180
+
+def deg2arcsec(values):
+    return values * 3600
+
+def arcsec2deg(values):
+    return values / 3600
 
 
 
