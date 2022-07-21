@@ -7,6 +7,7 @@ import equinox as eqx
 
 Propagator = typing.TypeVar("Propagator")
 Wavefront = typing.TypeVar("Wavefront")
+Layer = typing.TypeVar("Layer")
 Matrix = typing.TypeVar("Matrix")
 Tensor = typing.TypeVar("Tensor")
 Vector = typing.TypeVar("Vector")
@@ -42,7 +43,7 @@ class GaussianWavefront(dLux.Wavefront):
     def quadratic_phase(self : Wavefront, distance : float) -> Matrix:
         positions = self.get_pixel_positions()
         x, y = positions[0], positions[1]
-        return np.exp(1.j * np.pi * (x ** 2 + y ** 2) \
+        return np.exp(-1.j * np.pi * (x ** 2 + y ** 2) \
                 / distance / self.get_wavelength())
 
 
@@ -281,179 +282,60 @@ class GaussianLens(eqx.Module):
         self.focal_length = np.asarray(focal_length).astype(float)
 
 
-    # TODO: The plan is to implement each of the logic sections using 
-    # a set of private functions. Do I need to have an overarching
-    # funtion to hide the logic call. I think this will be the most 
-    # readable.
-
-    def _waist_after_if_...(wave : Wavefront, _ : float) -> Wavefront:
-        """
-        Set the beam waist and radius when the curvature of the 
-        incoming wavefront matches the curvature of the lens. 
-
-        Parameters
-        ----------
-        wave : Wavefront
-            The incoming GaussianWavefront. 
-        _ : float
-            A `JAX` enforced placeholder so that this function requires
-            the same number of arguments as 
-            `self._update_waist_not_...`. This is required for the call
-            to `jax.lax.cond`. See [this](https://jax.readthedocs.io
-            /jax/lax/cond.html) link for more information.
-
-        Returns
-        -------
-        wave : Wavefront
-            The wavefront with the beam waist radius and position 
-            updated to correctness. 
-        """
-        return wave\
-            .set_waist_position(wave.position)\
-            .set_waist_radius(wave.radius)
-
-    # NOTE: the name will be determined buy the edmun optic link 
-    # on Gaussian beams when the internet is restored.
-    # NOTE: So this will not work very nicely at present because the 
-    # curvatures need to be known. 
-    # I could embrace a pure functional style at this point and only
-    # pass the correct parameters. 
-    # unfortunately they are not used by the other branch so this 
-    # would look very strange to the casual observer.
-    def _waist_after_if_not...(wave : Wavefront, out_curve : float) -> Wavefront:
-        """
-        """
-        curve_ratio = (out_curve / wave.rayleigh_distance()) ** 2
-        # eq. 56 from Lawrence et. al.
-        # NOTE: rayleigh_distance -> rayleigh?
-        position = -out_curve / (1. + curve_ratio) + wave.position
-        radius = radius / np.sqrt(1. + 1. / curve_ratio)
-        return wave\
-            .set_waist_position(waist_position)\
-            .waist_radius(waist_radius)
-
-
-    def _waist_after(self : Layer, wave : Wavefront, 
-            out_curve : float) -> Wavefront:
-        """
-        Update the waist radius and position using eq. 56 from the 
-        Lawrence et. al. textbook. If the curvature of the wavefront
-        matches that of the lens the parameters are determined 
-        by the instantaneous ones of the wavefront. 
-
-        Parameters
-        ----------  
-        wave : Wavefront
-            The incoming GaussianWavefront. 
-        out_curve : float, units
-            The curvature of the beam following the lens. This can 
-            be calcualted using the `self._curvature_after(wave)`
-            method. 
-
-        Returns
-        -------
-        wave : Wavefront
-            The wavefront with the update beam waist radius and
-            position parameters.          
-        """
-        ... = (wave.curvature() == self.focal_length)
-        return jax.lax.cond(
-            ..., 
-            self._waist_after_if..., 
-            self._waist_after_if_not_..., 
-            wave, outcurve)
-
-
-    def _curvature_after_if_spherical_at(self : Layer, 
-            wave : Wavefront) -> tuple:
-        return (wave.position - wave.waist_position,
-            1. / (1. / wave.curvature() - 1. / self.focal_length)
-
-
-    def _curvature_after_if_planar_at(
-            self : Layer, wave : Wavefront) -> tuple:
-        return (np.inf, -self.focal_length)
-
-
-    def _curvature_after(self : Layer, is_spherical : bool, 
-            wave : Wavefront) -> tuple:
-        return jax.lax.cond(
-            is_spherical,
-            self._curvature_if_spherical_at,
-            self._curvature_if_planar_at,
-            wave)
-
-    def _focus_after_if_at_waist(
-            self : Layer, wave : Wavefront) -> Wavefront:
-        return wave.set_focal_length(self.focal_length)
-
-
-    def _
-
-        
     def __call__(self : Layer, wave : Wavefront) -> Wavefront:
-        # calculate beam radius at current surface
-        radius = wave.radius()
-
-        # Is the incident beam planar or spherical?
-        # We decided based on whether the last waist is outside the rayleigh distance.
-        #  I.e. here we neglect small curvature just away from the waist
-        # Based on that, determine the radius of curvature of the output beam
         from_waist = wave.waist_position - wave.position
-        was_spherical = wave.spherical
         was_planar = not wave.spherical
         is_spherical = np.abs(from_waist) > wave.rayleigh_distance()
-        is_planar = np.abs(from_waist) < wave.rayleigh_distance()
 
-        in_curve, out_curve = self._curvature_after(is_spherical, wave)
-        wave = self._waist_after(wave, out_curve) 
-        wave = jax.lax.cond(
+        curve_at = jax.lax.cond(
+            is_spherical,
+            lambda : from_waist,
+            lambda : np.inf)
+
+        curve_after = jax.lax.cond(
+            is_spherical,
+            lambda : 1. / (1. / wave.curvature_at() - 1. / self.focal_length),
+            lambda : -self.focal_length)
+
+        curve_ratio = (curve_after / wave.rayleigh_distance()) ** 2
+
+        waist_position_after = jax.lax.cond(
+            wave.curvature() == self.focal_length,
+            lambda : wave.position,
+            lambda : - curve_after / (1. + curve_ratio) + wave.position)
+
+        waist_radius_after = jax.lax.cond(
+            wave.curvature() == self.focal_length,
+            lambda : wave.radius(),
+            lambda : wave.radius() / np.sqrt(1. + 1. / curve_ratio))
+
+        focal_length_after = jax.lax.cond(
             np.isinf(wave.focal_length),
-            def _at_focus(wave : Wavefront) -> Wavefront: 
-                return wave.set_focal_length(self.focal_length),
-            def _between_foci(wave : Wavefront) -> Wavefront: 
-                magnification = out_curve / in_curve
-                return wave.set_focal_length(
-                    magnification * wave.focal_length),
-            wave)
+            lambda : self.focal_length,
+            lambda : curve_after / curve_at * wave.focal_length)
         
-        # Now we need to figure out the phase term to apply to the wavefront
-        # data array
-        # find the radius of curvature of the lens output beam
-        # curvatures are multiplicative exponentials
-        # e^(1/z) = e^(1/x)*e^(1/y) = e^(1/x+1/y) -> 1/z = 1/x + 1/y
-        # z = 1/(1/x+1/y) = xy/x+y
-        distance = jax.lax.cond(
+        distance = 1. / jax.lax.cond(
             was_planar,
-            def _was_planar(wave : Wavefront) -> float:
-                return jax.lax.cond(
-                    planar, 
-                    def _is_planar(): 
-                        return self.focal_length,
-                    def _is_spherical():
-                        return 1. / (\
-                            1. / self.focal_length + \
-                            1. / from_waist)),
-            def _was_spherical(wave : Wavefront) -> float:
-                return jax.lax.cond(
-                    spherical,
-                    def _is_spherical(): 
-                        return 1. / (\
-                            1. / self.focal_length + \
-                            1. / from_waist - \
-                            1. / in_curve),
-                    def _is_planar():
-                        return 1. / (\
-                            1. / self.focal_length - \
-                            1. / in_curve)),
-            wave)
+            lambda : jax.lax.cond(
+                is_planar, 
+                lambda : 1. / self.focal_length,
+                lambda : 1. / self.focal_length + 1. / from_waist),
+            lambda : jax.lax.cond(
+                is_spherical,
+                lambda : 1. / self.focal_length + 1. / from_waist - 1. / curve_at,
+                lambda : 1. / self.focal_length - 1. / in_curve))
 
-        # Apply phase to the wavefront array
         field = wave.get_complex_form() * wave.quadratic_phase(distance)
+        phase = np.angle(field)
+        amplitude = np.abs(field)
+
         return wave\
-            .set_phase(np.angle(field))\
-            .set_amplitude(np.abs(field))\
-            .set_spherical(spherical)
+            .set_phase(phase)\
+            .set_amplitude(amplitude)\
+            .set_spherical(spherical)\
+            .set_waist_position(waist_position_after)\
+            .set_waist_radius(waist_radius_after)\
+            .set_focal_length(focal_length_after)
 
 
 #    def apply_image_plane_fftmft(self, optic):
