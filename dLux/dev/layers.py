@@ -1039,27 +1039,3 @@ class HexagonalBasis(PolygonalBasis):
 
         hexagon = rectangle | left_triangle | right_triangle
         return np.asarray(hexagon).astype(float)
-    
-    
-# Wrapper classes for calling the invertion methods of Wavefront
-class InvertY(eqx.Module):
-    def __call__(self, params_dict):
-        wf = params_dict["Wavefront"]
-        wf = wf.invert_y()
-        params_dict["Wavefront"] = wf
-        return params_dict
-    
-class InvertX(eqx.Module):
-    def __call__(self, params_dict):
-        wf = params_dict["Wavefront"]
-        wf = wf.invert_x()
-        params_dict["Wavefront"] = wf
-        return params_dict
-    
-class InvertXY(eqx.Module):
-    
-    def __call__(self, params_dict):
-        wf = params_dict["Wavefront"]
-        wf = wf.invert_x_and_y()
-        params_dict["Wavefront"] = wf
-        return params_dict

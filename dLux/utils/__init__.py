@@ -1,10 +1,10 @@
 name = "utils"
 
-from .plotting import plot_batch
+from .plotting import plot_batch, compare_psfs
 from .zernike import zernike_basis
 from .hexike import hexike_basis
 from .helpers import (unif_rand, norm_rand, opd2phase, phase2opd,
-    get_ppf, rad2arcsec, arcsec2rad, rad2deg, deg2rad, cart2polar, polar2cart,
+    get_ppf, rad2arcsec, arcsec2rad, rad2deg, deg2rad, arcsec2deg, deg2arcsec, cart2polar, polar2cart,
     scale_mask, get_GE, get_RGE, get_RWGE, get_Rvec, get_Rmask,
     nyquist_pix_airy, nyquist_pix)
 from .bayes import (poiss_logpri, chi2_logpri, calc_cov, calc_ent)
