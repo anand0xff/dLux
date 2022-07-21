@@ -1,0 +1,6 @@
+Hi all,
+Thought I would create a separate issue for this. Essentially, we want to use the `_mft` in the `GaussianPropagator` in the long term to avoid sampling difficulties and increase the speed. As a part of this we need to specify the size of the output region in units of $\lambda/D$ where $D$ is the width of the pupil. I may be confusing myself but I believe at any point in the optical propagation we can use, $ 2 \times \omega_{z} / (\lambda / D) $, where $\omega_{z}$ is the beam radius at $z$. 
+
+Regards
+
+Jordan
