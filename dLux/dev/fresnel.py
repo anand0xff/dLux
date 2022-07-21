@@ -43,7 +43,7 @@ class GaussianWavefront(dLux.Wavefront):
     def quadratic_phase(self : Wavefront, distance : float) -> Matrix:
         positions = self.get_pixel_positions()
         x, y = positions[0], positions[1]
-        return np.exp(-1.j * np.pi * (x ** 2 + y ** 2) \
+        return np.exp(1.j * np.pi * (x ** 2 + y ** 2) \
                 / distance / self.get_wavelength())
 
 
@@ -58,7 +58,7 @@ class GaussianWavefront(dLux.Wavefront):
             (y / (self.pixel_scale ** 2 \
                 * self.number_of_pixels())) ** 2
         # Transfer Function of diffraction propagation eq. 22, eq. 87
-        return np.exp(1.j * np.pi * self.wavelength * \
+        return np.exp(-1.j * np.pi * self.wavelength * \
                 distance * rho_squared)
 
 
@@ -187,21 +187,8 @@ class GaussianPropagator(eqx.Module):
             distance : float) -> Wavefront:
         # Lawrence eq. 83,88
         field = wavefront.get_complex_form()
-        field *= np.fft.fftshift(wavefront.quadratic_phase(distance))
-
-        # SIGN CONVENTION: forward optical propagations want a positive sign in the complex exponential, which
-        # numpy implements as an "inverse" FFT
-        # NOTE: This all needs to be contained within a _propagate method
+        field *= wavefront.quadratic_phase(distance)
         field = self._propagate(field, distance)
-        # NOTE: future release should look like 
-        # TODO: rename wavefront -> wave internally for brevity
-        # field = self._propagate(wave.quadratic_phase() * wave.field())
-        # TODO: wavefront.number_of_pixels -> wavefront.pixels()
-        # TODO: calculation for pixel_scale should live in wavefront
-        # as a function. 
-        # TODO: Implement an wavefront.move(distance)
-        # TODO: The wavefront.move(distance) would automatically update
-        # the pixel scale ... this wuld require logic so never mind.
         pixel_scale = wavefront.pixel_scale_after(distance) 
         return wavefront\
             .pixel_scale_after(distance)\
@@ -262,11 +249,11 @@ class GaussianPropagator(eqx.Module):
         # NOTE: need to understand this mystery. 
         # field = np.fft.fftshift(wave.get_complex_form())
         # wave = wave.update_phasor(np.abs(field), np.angle(field))
-
+        decision = 2 * wave.spherical + wave.is_planar_after(self.distance)
         wave = jax.lax.switch(
-            2 * wave.spherical + wave.is_planar_after(self.distance),
-            [self._outside_to_inside, self._outside_to_outside,
-            self._inside_to_inside, self._inside_to_outside], wave) 
+            decision,
+            [self._inside_to_outside, self._inside_to_inside, 
+            self._outside_to_outside, self._outside_to_inside], wave) 
 
         # field = np.fft.fftshift(wave.get_complex_form())
         # wave = wave.update_phasor(np.abs(field), np.angle(field))
@@ -294,18 +281,19 @@ class GaussianLens(eqx.Module):
 
         curve_after = jax.lax.cond(
             is_spherical,
-            lambda : 1. / (1. / wave.curvature_at() - 1. / self.focal_length),
+            lambda : 1. / (1. / wave.curvature_at(wave.position) - 1. / self.focal_length),
             lambda : -self.focal_length)
 
         curve_ratio = (curve_after / wave.rayleigh_distance()) ** 2
+        curve_matched = wave.curvature_at(wave.position) == self.focal_length
 
         waist_position_after = jax.lax.cond(
-            wave.curvature() == self.focal_length,
+            curve_matched,
             lambda : wave.position,
             lambda : - curve_after / (1. + curve_ratio) + wave.position)
 
         waist_radius_after = jax.lax.cond(
-            wave.curvature() == self.focal_length,
+            curve_matched,
             lambda : wave.radius(),
             lambda : wave.radius() / np.sqrt(1. + 1. / curve_ratio))
 
