@@ -307,9 +307,11 @@ class GaussianLens(eqx.Module):
         # We decided based on whether the last waist is outside the rayleigh distance.
         #  I.e. here we neglect small curvature just away from the waist
         # Based on that, determine the radius of curvature of the output beam
-        from_waist_displacement = np.abs(wave.waist_position - wave.position)
-        from_waist_threshold = wave.rayleigh_factor * wave.rayleigh_distance()
-        spherical = from_waist_displacement > from_waist_threshold
+        from_waist = wave.waist_position - wave.position
+        was_spherical = wave.spherical
+        was_planar = not wave.spherical
+        spherical = np.abs(from_waist) > wave.rayleigh_distance()
+        planar = np.abs(from_waist) < wave.rayleigh_distance()
 
         # NOTE: True case
         # So these are just the curvatures. The first one assumes a sphere 
@@ -322,58 +324,76 @@ class GaussianLens(eqx.Module):
             lambda : (np.inf, -1. * self.focal_length))
 
         # update the wavefront parameters to the post-lens beam waist
-        if wave.curvature() == self.focal_length:
-            wave = wave\
-                .set_waist_position(wave.position)\
-                .set_waist_radius(radius)
-        else:
-            # eq. 56 from Lawrence et. al.
-            # NOTE: rayleigh_distance -> rayleigh?
-            curve_ratio = (out_curve / wave.rayleigh_distance()) ** 2
-            waist_position = - out_curve / (1. + curve_ratio) + wave.position
-            waist_radius = radius / np.sqrt(1. + 1. / curve_ratio)
-            wave = wave\
-                .set_waist_position(waist_position)\
-                .waist_radius(waist_radius)
+        wave = jax.lax.cond(
+            wave.curvature() == self.focal_length,
+            def true(wave : Wavefront) -> Wavefront: 
+                return wave\
+                    .set_waist_position(wave.position)\
+                    .set_waist_radius(radius),
+            def false(wave : Wavefront) -> Wavefront: 
+                curve_ratio = (out_curve / wave.rayleigh_distance()) ** 2;
+                # eq. 56 from Lawrence et. al.
+                # NOTE: rayleigh_distance -> rayleigh?
+                position = -out_curve / (1. + curve_ratio) + wave.position;
+                radius = radius / np.sqrt(1. + 1. / curve_ratio)
+                return wave\
+                    .set_waist_position(waist_position)\
+                    .waist_radius(waist_radius))
 
         # Update the focal length of the beam. This is closely related to but tracked separately from
         # the beam waist and radius of curvature; we keep track of it to use in optional conversion
         # of coordinates to angular units.
-        if not np.isfinite(self.focal_length):
-            self.focal_length = 1 * optic.fl
-        else:
-            # determine magnification as the change in curvature of this optic
-            mag = r_output_beam / r_input_beam
-            self.focal_length *= mag
+        # The focal_length of the beam is not actually a focal length at all. Rather it is the
+        # distance after the thin lens of the waist.   
+        # In the planar approximation the wave is focussed as if it was collimated.
+       
+        wave = jax.lax.cond(
+            np.isinf(wave.focal_length),
+            def _at_focus(wave : Wavefront) -> Wavefront: 
+                return wave.set_focal_length(self.focal_length),
+            def _between_foci(wave : Wavefront) -> Wavefront: 
+                magnification = out_curve / in_curve
+                return wave.set_focal_length(
+                    magnification * wave.focal_length),
+            wave)
         
         # Now we need to figure out the phase term to apply to the wavefront
         # data array
-        if not self.spherical:
-            if np.abs(self.z_w0 - self.z) < self.z_r:
-                z_eff = 1 * optic.fl
-
-            else:
-                # find the radius of curvature of the lens output beam
-                # curvatures are multiplicative exponentials
-                # e^(1/z) = e^(1/x)*e^(1/y) = e^(1/x+1/y) -> 1/z = 1/x + 1/y
-                # z = 1/(1/x+1/y) = xy/x+y
-                z_eff = 1.0 / (1.0 / optic.fl + 1.0 / (self.z - self.z_w0))
-                self.spherical = True
-
-        else:  # spherical input wavefront
-            if np.abs(self.z_w0 - self.z) > self.z_r:
-                if (self.z - self.z_w0) == 0:
-                    z_eff = 1.0 / (1.0 / optic.fl + 1.0 / (self.z - self.z_w0))
-                else:
-                    z_eff = 1.0 / (1.0 / optic.fl + 1.0 / (self.z - self.z_w0) - 1.0 / r_input_beam)
-
-            else:
-                z_eff = 1.0 / (1.0 / optic.fl - 1.0 / r_input_beam)
-                self.spherical = False
+        # find the radius of curvature of the lens output beam
+        # curvatures are multiplicative exponentials
+        # e^(1/z) = e^(1/x)*e^(1/y) = e^(1/x+1/y) -> 1/z = 1/x + 1/y
+        # z = 1/(1/x+1/y) = xy/x+y
+        distance = jax.lax.cond(
+            was_planar,
+            def _was_planar(wave : Wavefront) -> float:
+                return jax.lax.cond(
+                    planar, 
+                    def _is_planar(): 
+                        return self.focal_length,
+                    def _is_spherical():
+                        return 1. / (\
+                            1. / self.focal_length + \
+                            1. / from_waist)),
+            def _was_spherical(wave : Wavefront) -> float:
+                return jax.lax.cond(
+                    spherical,
+                    def _is_spherical(): 
+                        return 1. / (\
+                            1. / self.focal_length + \
+                            1. / from_waist - \
+                            1. / in_curve),
+                    def _is_planar():
+                        return 1. / (\
+                            1. / self.focal_length - \
+                            1. / in_curve)),
+            wave)
 
         # Apply phase to the wavefront array
-        effective_optic = QuadPhase(-z_eff, name=optic.name)
-        self *= effective_optic
+        field = wave.get_complex_form() * wave.quadratic_phase(distance)
+        return wave\
+            .set_phase(np.angle(field))\
+            .set_amplitude(np.abs(field))\
+            .set_spherical(spherical)
 
 
 #    def apply_image_plane_fftmft(self, optic):
