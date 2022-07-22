@@ -331,7 +331,7 @@ class GaussianLens(eqx.Module):
 
         waist_radius_after = jax.lax.cond(
             curve_matched,
-            lambda : +radius,
+            lambda : radius,
             lambda : radius / np.sqrt(1. + 1. / curve_ratio))
 
         focal_length_after = jax.lax.cond(
