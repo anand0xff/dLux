@@ -174,8 +174,8 @@ class GaussianPropagator(eqx.Module):
         # chosen from the "spherical" and one other thing. 
         # should probably avoid logic overcrowding
         return jax.lax.cond(distance > 0,
-            lambda : self._fourier_transform(field),
-            lambda : self._inverse_fourier_transform(field))
+            lambda : self._inverse_fourier_transform(field),
+            lambda : self._fourier_transform(field))
             
 
     # NOTE: Wavefront must be planar 
@@ -216,13 +216,17 @@ class GaussianPropagator(eqx.Module):
             distance : float) -> Wavefront:
         # Lawrence eq. 89
         field = wavefront.get_complex_form()
-        field = self._propagate(field, distance)
-        field *= wavefront.quadratic_phase(distance)
+        field = jax.lax.cond(
+            distance > 0, 
+            lambda field : np.fft.ifft2(field),
+            lambda field : np.fft.fft2(field),
+            field) 
+        wavefront = wavefront.pixel_scale_after(distance)
+        field *= np.fft.fftshift(wavefront.quadratic_phase(distance))
         return wavefront\
             .set_phase(np.angle(field))\
             .set_amplitude(np.abs(field))\
             .set_spherical(True)\
-            .pixel_scale_after(distance)\
             .position_after(distance)
 
 
