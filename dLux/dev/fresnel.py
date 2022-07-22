@@ -98,8 +98,9 @@ class GaussianWavefront(dLux.Wavefront):
                 (relative_position / self.rayleigh_distance()) ** 2)
            
  
-    def is_planar_after(self : Wavefront, distance : float) -> bool:
-        return np.abs(distance) < self.rayleigh_distance()
+    def is_planar_at(self : Wavefront, position : float) -> bool:
+        return np.abs(self.waist_position - position) \
+            < self.rayleigh_distance()
 
     # NOTE: Also updates, so I want better names for these rather than 
     # after. 
@@ -200,8 +201,13 @@ class GaussianPropagator(eqx.Module):
             distance : float) -> Wavefront:
         # Lawrence eq. 83,88
         field = wavefront.get_complex_form()
-        field *= wavefront.quadratic_phase(distance)
-        field = self._propagate(field, distance)
+        field *= np.fft.fftshift(wavefront.quadratic_phase(distance))
+        # field = self._propagate(field, distance)
+        field = jax.lax.cond(
+            distance > 0, 
+            lambda field : np.fft.ifft2(field),
+            lambda field : np.fft.fft2(field),
+            field) 
         pixel_scale = wavefront.pixel_scale_after(distance) 
         return wavefront\
             .pixel_scale_after(distance)\
@@ -265,17 +271,18 @@ class GaussianPropagator(eqx.Module):
     # Coordiantes must be in meters for the propagator
     def __call__(self : Propagator, wave : Wavefront) -> Wavefront:
         # NOTE: need to understand this mystery. 
-        # field = np.fft.fftshift(wave.get_complex_form())
-        # wave = wave.update_phasor(np.abs(field), np.angle(field))
-        decision = 2 * wave.spherical + wave.is_planar_after(self.distance)
-        print(decision)
+        field = np.fft.fftshift(wave.get_complex_form())
+        wave = wave.update_phasor(np.abs(field), np.angle(field))
+        position = wave.position + self.distance
+        decision = 2 * wave.spherical + wave.is_planar_at(position)
+        
         wave = jax.lax.switch(
             decision,
             [self._inside_to_outside, self._inside_to_inside, 
             self._outside_to_inside, self._outside_to_outside], wave) 
 
-        # field = np.fft.fftshift(wave.get_complex_form())
-        # wave = wave.update_phasor(np.abs(field), np.angle(field))
+        field = np.fft.fftshift(wave.get_complex_form())
+        wave = wave.update_phasor(np.abs(field), np.angle(field))
         return wave
 
 
@@ -301,6 +308,8 @@ class GaussianLens(eqx.Module):
         was_spherical = np.abs(from_waist) > wave.rayleigh_factor * \
             wave.rayleigh_distance()
 
+        curve = wave.curvature_at(wave.position)
+
         curve_at = jax.lax.cond(
             was_spherical,
             lambda : from_waist,
@@ -308,22 +317,21 @@ class GaussianLens(eqx.Module):
 
         curve_after = jax.lax.cond(
             was_spherical,
-            lambda : 1. / (1. / wave.curvature_at(wave.position) - 1. / self.focal_length),
+            lambda : 1. / (1. / curve  - 1. / self.focal_length),
             lambda : -self.focal_length)
 
-        curve_ratio = (curve_after / wave.rayleigh_distance()) ** 2
-        curve_matched = wave.curvature_at(wave.position) == self.focal_length
+        radius = wave.radius_at(wave.position)
+        curve_ratio = (wave.wavelength * curve_after / np.pi / radius ** 2) ** 2
+        curve_matched = curve == self.focal_length
 
         waist_position_after = jax.lax.cond(
             curve_matched,
             lambda : wave.position,
             lambda : -curve_after / (1. + curve_ratio) + wave.position)
 
-        radius = wave.radius_at(wave.position)
-
         waist_radius_after = jax.lax.cond(
             curve_matched,
-            lambda : radius,
+            lambda : +radius,
             lambda : radius / np.sqrt(1. + 1. / curve_ratio))
 
         focal_length_after = jax.lax.cond(
