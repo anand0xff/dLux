@@ -42,9 +42,12 @@ class GaussianWavefront(dLux.Wavefront):
     # like quadratic_phase_after() or phase_after() 
     def quadratic_phase(self : Wavefront, distance : float) -> Matrix:
         positions = self.get_pixel_positions()
-        x, y = positions[0], positions[1]
-        return np.exp(1.j * np.pi * (x ** 2 + y ** 2) \
-                / distance / self.get_wavelength())
+        rho_squared = (positions ** 2).sum(axis = 0) 
+        # TODO: This looks like it may be wrong.
+        return np.exp(1.j * np.pi * rho_squared / distance /\
+            self.wavelength)
+#        return np.exp(1.j / np.pi * (x ** 2 + y ** 2) \
+#                / distance * self.get_wavelength())
 
 
     # NOTE: This is plane_to_plane transfer function. I should give it
@@ -116,16 +119,26 @@ class GaussianWavefront(dLux.Wavefront):
     
     # NOTE: ordering convention: dunder, _..., ..._at, ..._after, 
     # set_... get_...
-    # NOTE: naming convention: position -> absolute place on optical
+    # NOTE: naming conventself._outside_to_outsideion: position -> absolute place on optical
     # axis and distance -> movement.
-    # def set_waist_position(self : Wavefront, waist_position : float) -> Wavefront:
-    # def set_waist_radius(self : Wavefront, waist_radius : float) -> Wavefront:
+    def set_waist_position(self : Wavefront, waist_position : float) -> Wavefront:
+        return eqx.tree_at(lambda wave : wave.waist_position,
+            self, waist_position)    
+    
+
+    def set_waist_radius(self : Wavefront, waist_radius : float) -> Wavefront:
+        return eqx.tree_at(lambda wave : wave.waist_radius,
+            self, waist_radius)
+
+
     def set_spherical(self : Wavefront, spherical : bool) -> Wavefront:
         return eqx.tree_at(lambda wave : wave.spherical, self, spherical)
     #def set_angular(self : Wavefront, angular : bool) -> Wavefront:
     # NOTE: focal_length will probably not stay as an attribute of the 
     # wavefront but will be upgraded to an optical element attribute.
-    #def set_focal_length(self : Wavefront, focal_length : float) -> Wavefront:
+    def set_focal_length(self : Wavefront, focal_length : float) -> Wavefront:
+        return eqx.tree_at(lambda wave : wave.focal_length,
+            self, focal_length)
 
 
     def get_pixel_positions(self : Wavefront) -> Tensor:
@@ -202,8 +215,9 @@ class GaussianPropagator(eqx.Module):
     def _spherical_to_waist(self : Propagator, wavefront : Wavefront,
             distance : float) -> Wavefront:
         # Lawrence eq. 89
-        field = self._propagate(wavefront.get_complex_form(), distance)
-        field *= np.fft.fftshift(wavefront.quadratic_phase(distance))
+        field = wavefront.get_complex_form()
+        field = self._propagate(field, distance)
+        field *= wavefront.quadratic_phase(distance)
         return wavefront\
             .set_phase(np.angle(field))\
             .set_amplitude(np.abs(field))\
@@ -250,10 +264,11 @@ class GaussianPropagator(eqx.Module):
         # field = np.fft.fftshift(wave.get_complex_form())
         # wave = wave.update_phasor(np.abs(field), np.angle(field))
         decision = 2 * wave.spherical + wave.is_planar_after(self.distance)
+        print(decision)
         wave = jax.lax.switch(
             decision,
             [self._inside_to_outside, self._inside_to_inside, 
-            self._outside_to_outside, self._outside_to_inside], wave) 
+            self._outside_to_inside, self._outside_to_outside], wave) 
 
         # field = np.fft.fftshift(wave.get_complex_form())
         # wave = wave.update_phasor(np.abs(field), np.angle(field))
@@ -269,18 +284,26 @@ class GaussianLens(eqx.Module):
         self.focal_length = np.asarray(focal_length).astype(float)
 
 
+    def _phase(self : Layer, wave : Wavefront, 
+            distance : float) -> Matrix:
+        position = wave.get_pixel_positions()
+        rho_squared = (position ** 2).sum(axis = 0)
+        return np.exp(1.j / np.pi * rho_squared / distance *\
+            wave.wavelength)
+
+
     def __call__(self : Layer, wave : Wavefront) -> Wavefront:
         from_waist = wave.waist_position - wave.position
-        was_planar = not wave.spherical
-        is_spherical = np.abs(from_waist) > wave.rayleigh_distance()
+        was_spherical = np.abs(from_waist) > wave.rayleigh_factor * \
+            wave.rayleigh_distance()
 
         curve_at = jax.lax.cond(
-            is_spherical,
+            was_spherical,
             lambda : from_waist,
             lambda : np.inf)
 
         curve_after = jax.lax.cond(
-            is_spherical,
+            was_spherical,
             lambda : 1. / (1. / wave.curvature_at(wave.position) - 1. / self.focal_length),
             lambda : -self.focal_length)
 
@@ -290,37 +313,47 @@ class GaussianLens(eqx.Module):
         waist_position_after = jax.lax.cond(
             curve_matched,
             lambda : wave.position,
-            lambda : - curve_after / (1. + curve_ratio) + wave.position)
+            lambda : -curve_after / (1. + curve_ratio) + wave.position)
+
+        radius = wave.radius_at(wave.position)
 
         waist_radius_after = jax.lax.cond(
             curve_matched,
-            lambda : wave.radius(),
-            lambda : wave.radius() / np.sqrt(1. + 1. / curve_ratio))
+            lambda : radius,
+            lambda : radius / np.sqrt(1. + 1. / curve_ratio))
 
         focal_length_after = jax.lax.cond(
             np.isinf(wave.focal_length),
             lambda : self.focal_length,
             lambda : curve_after / curve_at * wave.focal_length)
-        
+
+        wave = wave\
+            .set_focal_length(focal_length_after)\
+            .set_waist_radius(waist_radius_after)\
+            .set_waist_position(waist_position_after)
+
+        from_new_waist = waist_position_after - wave.position
+        is_spherical = np.abs(from_new_waist) > wave.rayleigh_distance()
+ 
         distance = 1. / jax.lax.cond(
-            was_planar,
-            lambda : jax.lax.cond(
-                is_planar, 
-                lambda : 1. / self.focal_length,
-                lambda : 1. / self.focal_length + 1. / from_waist),
+            wave.spherical,
             lambda : jax.lax.cond(
                 is_spherical,
-                lambda : 1. / self.focal_length + 1. / from_waist - 1. / curve_at,
-                lambda : 1. / self.focal_length - 1. / in_curve))
+                lambda : 1. / self.focal_length + 1. / from_new_waist - 1. / curve_at,
+                lambda : 1. / self.focal_length - 1. / curve_at),
+            lambda : jax.lax.cond(
+                is_spherical, 
+                lambda : 1. / self.focal_length + 1. / from_new_waist,
+                lambda : 1. / self.focal_length))
 
-        field = wave.get_complex_form() * wave.quadratic_phase(distance)
+        field = wave.get_complex_form() * self._phase(wave, distance)
         phase = np.angle(field)
         amplitude = np.abs(field)
 
         return wave\
             .set_phase(phase)\
             .set_amplitude(amplitude)\
-            .set_spherical(spherical)\
+            .set_spherical(is_spherical)\
             .set_waist_position(waist_position_after)\
             .set_waist_radius(waist_radius_after)\
             .set_focal_length(focal_length_after)
