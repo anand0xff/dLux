@@ -158,12 +158,12 @@ class GaussianPropagator(eqx.Module):
 
     def _fourier_transform(self : Propagator, field : Matrix) -> Matrix:
         # return np.fft.ifft2(field)
-        return 1 / field.shape[0] * np.fft.fftshift(np.fft.ifft2(field))
+        return 1 / field.shape[0] * np.fft.fft2(field)
 
 
     def _inverse_fourier_transform(self : Propagator, field : Matrix) -> Matrix:
         # return np.fft.fft2(field)
-        return field.shape[0] * np.fft.fft2(np.fft.ifftshift(field))
+        return field.shape[0] * np.fft.ifft2(field)
 
 
     # NOTE: need to add in the standard FFT normalising factor
@@ -202,12 +202,12 @@ class GaussianPropagator(eqx.Module):
         # Lawrence eq. 83,88
         field = wavefront.get_complex_form()
         field *= np.fft.fftshift(wavefront.quadratic_phase(distance))
-        # field = self._propagate(field, distance)
-        field = jax.lax.cond(
-            distance > 0, 
-            lambda field : np.fft.ifft2(field),
-            lambda field : np.fft.fft2(field),
-            field) 
+        field = self._propagate(field, distance)
+#        field = jax.lax.cond(
+#            distance > 0, 
+#            lambda field : np.fft.ifft2(field),
+#            lambda field : np.fft.fft2(field),
+#            field) 
         pixel_scale = wavefront.pixel_scale_after(distance) 
         return wavefront\
             .pixel_scale_after(distance)\
@@ -222,11 +222,12 @@ class GaussianPropagator(eqx.Module):
             distance : float) -> Wavefront:
         # Lawrence eq. 89
         field = wavefront.get_complex_form()
-        field = jax.lax.cond(
-            distance > 0, 
-            lambda field : np.fft.ifft2(field),
-            lambda field : np.fft.fft2(field),
-            field) 
+        field = self._propagate(field, distance)
+#        field = jax.lax.cond(
+#            distance > 0, 
+#            lambda field : np.fft.ifft2(field),
+#            lambda field : np.fft.fft2(field),
+#            field) 
         wavefront = wavefront.pixel_scale_after(distance)
         field *= np.fft.fftshift(wavefront.quadratic_phase(distance))
         return wavefront\
@@ -245,6 +246,10 @@ class GaussianPropagator(eqx.Module):
         end = wave.position + self.distance
         wave = self._plane_to_plane(wave, wave.waist_position - start)
         wave = self._waist_to_spherical(wave, end - wave.waist_position)
+        # TODO: This may belong between the plane to plane and the 
+        # waist_to_spherical
+#        field = np.fft.fftshift(wave.get_complex_form())
+#        wave = wave.update_phasor(np.abs(field), np.angle(field))
         return wave
 
 
@@ -253,6 +258,8 @@ class GaussianPropagator(eqx.Module):
         end = wave.position + self.distance
         wave = self._spherical_to_waist(wave, wave.waist_position - start)
         wave = self._plane_to_plane(wave, end - wave.waist_position)
+        field = np.fft.fftshift(wave.get_complex_form())
+        wave = wave.update_phasor(np.abs(field), np.angle(field))
         return wave
 
 
@@ -271,18 +278,18 @@ class GaussianPropagator(eqx.Module):
     # Coordiantes must be in meters for the propagator
     def __call__(self : Propagator, wave : Wavefront) -> Wavefront:
         # NOTE: need to understand this mystery. 
-        field = np.fft.fftshift(wave.get_complex_form())
-        wave = wave.update_phasor(np.abs(field), np.angle(field))
+#        field = np.fft.fftshift(wave.get_complex_form())
+#        wave = wave.update_phasor(np.abs(field), np.angle(field))
         position = wave.position + self.distance
         decision = 2 * wave.spherical + wave.is_planar_at(position)
-        
+    
         wave = jax.lax.switch(
             decision,
             [self._inside_to_outside, self._inside_to_inside, 
-            self._outside_to_inside, self._outside_to_outside], wave) 
+            self._outside_to_outside, self._outside_to_inside], wave) 
 
-        field = np.fft.fftshift(wave.get_complex_form())
-        wave = wave.update_phasor(np.abs(field), np.angle(field))
+#        field = np.fft.fftshift(wave.get_complex_form())
+#        wave = wave.update_phasor(np.abs(field), np.angle(field))
         return wave
 
 
