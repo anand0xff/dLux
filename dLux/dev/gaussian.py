@@ -14,36 +14,6 @@ Vector = typing.TypeVar("Vector")
 
 
 class GaussianWavefront(dLux.Wavefront):
-    """
-    Expresses the behaviour and state of a wavefront propagating in 
-    an optical system under the fresnel assumptions. This 
-    implementation is based on the same class from the `poppy` 
-    library [poppy](https://github.com/spacetelescope/poppy/fresnel.py)
-    and Chapter 3 from _Applied Optics and Optical Engineering_
-    by Lawrence G. N.
-
-    Approximates the wavefront as a Gaussian Beam parameterised by the 
-    radius of the beam, the phase radius, the phase factor and the 
-    Rayleigh distance. Propagation is based on two different regimes 
-    for a total of four different opertations. 
-    
-    Attributes
-    ----------
-    position : float, meters
-        The position of the wavefront in the optical system.
-    waist_radius : float, meters
-        The radius of the beam. 
-    waist_position : float, meters
-        The position of the beam waist along the optical axis. 
-    spherical : bool
-        A convinience tracker for knowing if the wavefront is 
-        currently spherical.
-    rayleigh_factor : float
-        Used to determine the range over which the wavefront remains
-        planar. 
-    focal_length : float, meters
-        Used for the conversion between angular and physical units. 
-    """
     angular : bool
     spherical : bool
     waist_radius : float 
@@ -58,25 +28,6 @@ class GaussianWavefront(dLux.Wavefront):
             wavelength : float,
             beam_radius : float,
             rayleigh_factor : float = 2.) -> Wavefront:
-        """
-        Creates a wavefront with an empty amplitude and phase 
-        arrays but of a given wavelength and phase offset. 
-        Assumes that the beam starts at the waist following from 
-        the `poppy` convention.
-
-        Parameters
-        ----------
-        beam_radius : float, meters
-            Radius of the beam at the initial optical plane.
-        wavelength : float, meters
-            The wavelength of the `Wavefront`.
-        offset : Array, radians
-            The (x, y) angular offset of the `Wavefront` from 
-            the optical axis.
-        rayleigh_factor : float
-            A multiplicative factor determining the threeshild for 
-            considering the wavefront spherical.
-        """
         super(GaussianWavefront, self).__init__(wavelength, offset)
         self.waist_radius = np.asarray(beam_radius).astype(float)  
         self.position = np.asarray(0.).astype(float)
@@ -90,48 +41,18 @@ class GaussianWavefront(dLux.Wavefront):
     # NOTE: This also needs an ..._after name. I could use something
     # like quadratic_phase_after() or phase_after() 
     def quadratic_phase(self : Wavefront, distance : float) -> Matrix:
->>>>>>> NewFresnel
-        """
-        Convinience function that simplifies many of the diffraction
-        equations. Caclulates a quadratic phase factor associated with 
-        the beam. 
-
-        Parameters
-        ----------
-        distance : float
-            The distance of the propagation measured in metres. 
-
-        Returns
-        -------
-        phase : float
-            The near-field quadratic phase accumulated by the beam
-            from a propagation of distance.
-        """      
         positions = self.get_pixel_positions()
         rho_squared = (positions ** 2).sum(axis = 0) 
+        # TODO: This looks like it may be wrong.
         return np.exp(1.j * np.pi * rho_squared / distance /\
             self.wavelength)
+#        return np.exp(1.j / np.pi * (x ** 2 + y ** 2) \
+#                / distance * self.get_wavelength())
 
 
     # NOTE: This is plane_to_plane transfer function. I should give it
     # a better name like fraunhofer_phase_after()
     def transfer(self : Wavefront, distance : float) -> Matrix:
-        """
-        The optical transfer function (OTF) for the gaussian beam.
-        Assumes propagation is along the axis. 
-
-        Parameters
-        ----------
-        distance : float
-            The distance to propagate the wavefront along the beam 
-            via the optical transfer function in metres.
-
-        Returns
-        -------
-        phase : float 
-            A phase representing the evolution of the wavefront over 
-            the distance. 
-        """
         positions = self.get_pixel_positions()
         x, y = positions[0], positions[1]
         rho_squared = \
@@ -145,14 +66,6 @@ class GaussianWavefront(dLux.Wavefront):
 
 
     def rayleigh_distance(self : Wavefront) -> float:
-        """
-        Calculates the rayleigh distance of the Gaussian beam.
-        
-        Returns
-        -------
-        rayleigh_distance : float
-            The Rayleigh distance of the wavefront in metres.
-        """
         return np.pi * self.waist_radius ** 2 / self.wavelength
 
 
@@ -186,22 +99,6 @@ class GaussianWavefront(dLux.Wavefront):
            
  
     def is_planar_at(self : Wavefront, position : float) -> bool:
-        """ 
-        Determines whether a point at along the axis of propagation 
-        at distance away from the current position is inside the 
-        rayleigh distance. 
-
-        Parameters
-        ----------
-        distance : float
-            The distance to test in metres.
-
-        Returns
-        -------
-        inside : bool
-            true if the point is within the rayleigh distance false 
-            otherwise.
-        """
         return np.abs(self.waist_position - position) \
             < self.rayleigh_distance()
 
@@ -288,7 +185,7 @@ class GaussianPropagator(eqx.Module):
             distance : float):
         # NOTE: Seriously need to change the name to get_field()
         field = self._fourier_transform(wavefront.get_complex_form())
-        field *= np.fft.fftshift(wavefront.transfer(distance))  # eq. 6.68
+        field *= wavefront.transfer(distance)  # eq. 6.68
         field = self._inverse_fourier_transform(field)
         # NOTE: wavefront.from_field is looking good right about now
         return wavefront\
@@ -341,14 +238,7 @@ class GaussianPropagator(eqx.Module):
 
 
     def _inside_to_inside(self : Propagator, wave : Wavefront) -> Wavefront:
-#        field = wave.get_complex_form()
-#        field = np.fft.fftshift(field)
-#        wave = wave.update_phasor(np.abs(field), np.angle(field)) 
-        wave = self._plane_to_plane(wave, self.distance)
-        return wave
-#        field = wave.get_complex_form()
-#        field = np.fft.fftshift(field)
-#        return wave.update_phasor(np.abs(field), np.angle(field))
+         return self._plane_to_plane(wave, self.distance)
 
 
     def _inside_to_outside(self : Propagator, wave : Wavefront) -> Wavefront: 
