@@ -90,7 +90,6 @@ class GaussianWavefront(dLux.Wavefront):
     # NOTE: This also needs an ..._after name. I could use something
     # like quadratic_phase_after() or phase_after() 
     def quadratic_phase(self : Wavefront, distance : float) -> Matrix:
->>>>>>> NewFresnel
         """
         Convinience function that simplifies many of the diffraction
         equations. Caclulates a quadratic phase factor associated with 
