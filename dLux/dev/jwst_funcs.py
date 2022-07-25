@@ -6,7 +6,7 @@ from layers import *
 from jax.scipy.ndimage import map_coordinates
 
 
-def get_layers(planes, extras, osys, print_vals=False, tilt=True, rotate=True, distort=False, downsample=False, background=False):
+def get_layers(planes, extras, osys, aper=None, print_vals=False, tilt=True, rotate=True, distort=False, downsample=False, background=False):
 
     pscale = planes[0].pixelscale.to('m/pix').value
     npix = planes[0].npix
@@ -56,23 +56,27 @@ def get_layers(planes, extras, osys, print_vals=False, tilt=True, rotate=True, d
             
             # Rotation
             if rotate:
-                aper = osys._detector_geom_info.aperture
+                if aper is None:
+                    aper = osys._detector_geom_info.aperture
                 rotate_value = getattr(aper, "V3IdlYAngle")
                 det_layers.append(RotateImage(rotate_value))
             
             # Distortion
             if distort:
-                aper = osys._detector_geom_info.aperture
+                if aper is None:
+                    aper = osys._detector_geom_info.aperture
                 coeffs_dict = aper.get_polynomial_coefficients()
 
                 det_layers.append(ApplySiafDistortion(coeffs_dict['Sci2IdlX'], 
                                                       coeffs_dict['Sci2IdlY'],
+                                                      
                                                       aper.XSciRef,
                                                       aper.YSciRef,
-                                                      # aper.XDetSize/2, # Sci cens, to be loaded from model later
-                                                      # aper.YDetSize/2, # Sci cens, to be loaded from model later
-                                                      (aper.XDetSize+1)/2, # Sci cens, to be loaded from model later
-                                                      (aper.YDetSize+1)/2, # Sci cens, to be loaded from model later
+                                                      
+                                                      # Should sci cens here include oversampling?
+                                                      (aper.XSciSize+1)/2, # Sci cens
+                                                      (aper.XSciSize+1)/2, # Sci cens
+                                                      
                                                       plane.pixelscale.value / plane.oversample,
                                                       plane.oversample))
                 
