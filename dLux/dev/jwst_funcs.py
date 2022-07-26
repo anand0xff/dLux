@@ -74,6 +74,7 @@ def get_layers(planes, extras, osys, aper=None, print_vals=False, tilt=True, rot
                                                       aper.YSciRef,
                                                       
                                                       # Should sci cens here include oversampling?
+                                                      # I dont think so
                                                       (aper.XSciSize+1)/2, # Sci cens
                                                       (aper.XSciSize+1)/2, # Sci cens
                                                       
@@ -112,7 +113,6 @@ class InvertX(eqx.Module):
         return params_dict
     
 class InvertXY(eqx.Module):
-    
     def __call__(self, params_dict):
         wf = params_dict["Wavefront"]
         wf = wf.invert_x_and_y()
