@@ -35,3 +35,4 @@ jobs:
 
       - name: generate and deploy documentation
         run: mkdocs gh-deploy -d https://louisdesdoigts.github.io/dLux
+
