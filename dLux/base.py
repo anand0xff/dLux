@@ -19,6 +19,7 @@ class OpticalSystem(eqx.Module):
     weights: (Nwavel)/(Nwavels, Nstars) array
     
     dLux currently does not check that inputs are correctly shaped/formatted!
+
     Notes:
      - Take in layers in order to re-intialise the model every call?
     
@@ -29,6 +30,7 @@ class OpticalSystem(eqx.Module):
     
     ToDo: Add getter methods for accessing weights and fluxes attributes that
     use np.squeeze to remove empy axes
+
     
     Attributes
     ----------

@@ -38,6 +38,7 @@ def cartesian_to_polar(coordinates : Tensor) -> Tensor:
     ----------
     coordinates : Tensor
         The rectilinear coordinates.
+
     Returns
     -------
     coordinates : Tensor
@@ -52,10 +53,12 @@ def factorial(n : int) -> int:
     """
     Calculate n! in a jax friendly way. Note that n == 0 is not a 
     safe case.  
+
     Parameters
     ----------
     n : int
         The integer to calculate the factorial of.
+
     Returns
     n! : int
         The factorial of the integer
@@ -69,6 +72,7 @@ class Aperture(eqx.Module, ABC):
     apertures. An aperture is represented by an array, usually in the
     range of 0. to 1.. Values in between can be used to represent 
     soft edged apertures and intermediate surfaces. 
+
     Attributes
     ----------
     pixels : int
@@ -146,6 +150,7 @@ class Aperture(eqx.Module, ABC):
             The coordinate system over which to generate the aperture 
             The leading dimesnion of the tensor should be the x and y
             coordinates in that order. 
+
         Returns
         -------
         aperture : Array[Float]
@@ -226,12 +231,14 @@ class Aperture(eqx.Module, ABC):
         """
         Enlarge or shrink the coordinate system, by the inbuilt 
         amount specified by `self._rmax`.
+
         Parameters
         ----------
         coordinates : Tensor
             A `(2, npix, npix)` representation of the coordinate 
             system. The leading dimensions specifies the x and then 
             the y coordinates in that order. 
+
         Returns
         -------
         coordinates : Tensor
@@ -244,12 +251,14 @@ class Aperture(eqx.Module, ABC):
         """
         Rotate the coordinate system by a pre-specified amount,
         `self._theta`
+
         Parameters
         ----------
         coordinates : Tensor
             A `(2, npix, npix)` representation of the coordinate 
             system. The leading dimensions specifies the x and then 
             the y coordinates in that order. 
+
         Returns
         -------
         coordinates : Tensor
@@ -265,12 +274,14 @@ class Aperture(eqx.Module, ABC):
     def _shear(self : Layer, coordinates : Tensor) -> Tensor:
         """
         Shear the coordinate system by the inbuilt amount `self._phi`.
+
         Parameters
         ----------
         coordinates : Tensor
             A `(2, npix, npix)` representation of the coordinate 
             system. The leading dimensions specifies the x and then 
             the y coordinates in that order. 
+
         Returns
         -------
         coordinates : Tensor
@@ -285,12 +296,14 @@ class Aperture(eqx.Module, ABC):
         """
         Offset the coordinate system by prespecified amounts in both
         the `x` and `y` directions. 
+
         Parameters
         ----------
         coordinates : Tensor
             A `(2, npix, npix)` representation of the coordinate 
             system. The leading dimensions specifies the x and then 
             the y coordinates in that order. 
+
         Returns
         -------
         coordinates : Tensor
@@ -306,6 +319,7 @@ class Aperture(eqx.Module, ABC):
     def _coordinates(self : Layer) -> Tensor:
         """
         Generate the transformed coordinate system for the aperture.
+
         Returns
         -------
         coordinates : Tensor
@@ -327,6 +341,7 @@ class Aperture(eqx.Module, ABC):
         ----------
         theta : float
             The angle of rotation from the positive x-axis.  
+
         Returns
         -------
         basis : HexagonalBasis 
@@ -342,6 +357,7 @@ class Aperture(eqx.Module, ABC):
         rmax : float
             The radius of the smallest circle that can completely 
             enclose the aperture.
+
         Returns
         -------
         basis : HexagonalBasis
@@ -356,6 +372,7 @@ class Aperture(eqx.Module, ABC):
         ----------
         phi : float
             The angle of shear from the positive y-axis.
+
         Returns
         -------
         basis : HexagonalBasis
@@ -371,6 +388,7 @@ class Aperture(eqx.Module, ABC):
         x : float
             The x coordinate of the centre of the hexagonal
             aperture.
+
         Returns
         -------
         basis : HexagonalBasis
@@ -386,6 +404,7 @@ class Aperture(eqx.Module, ABC):
         x : float
             The y coordinate of the centre of the hexagonal
             aperture.
+
         Returns
         -------
         basis : HexagonalBasis
@@ -397,12 +416,14 @@ class Aperture(eqx.Module, ABC):
     def __call__(self : Layer, parameters : dict) -> dict:
         """
         Apply the aperture to an incoming wavefront.
+
         Parameters
         ----------
         parameters : dict
             A dictionary containing the parameters of the model. 
             The dictionary must satisfy `parameters.get("Wavefront")
             != None`. 
+
         Returns
         -------
         parameters : dict
@@ -421,6 +442,7 @@ class AnnularAperture(Aperture):
     A circular aperture, parametrised by the number of pixels in
     the array. By default this is a hard edged aperture but may be 
     in future modifed to provide soft edges. 
+
     Attributes
     ----------
     rmax : float
@@ -554,6 +576,7 @@ class HexagonalAperture(Aperture):
         """
         Generates an array representing the hard edged hexagonal 
         aperture. 
+
         Returns
         -------
         aperture : Array
@@ -590,6 +613,7 @@ class JWSTPrimaryApertureSegment(Aperture):
     """
     A dLux implementation of the JWST primary aperture segment.
     The segments are sketched and drawn below:
+
                             +---+
                            *     *
                       +---+  B1   +---+
@@ -611,18 +635,24 @@ class JWSTPrimaryApertureSegment(Aperture):
                       +---+  B4   +---+
                            *     *         
                             +---+    
+
     The data for the vertices is retrieved from WebbPSF and the 
     syntax for using the class is as follows:
+
     >>> npix = 1008 # Total number of pixels for the entire primary
     >>> appix = 200 # Pixels for this specific aperture. 
     >>> C1 = JWSTPrimaryApertureSegment("C1-1", npix, appix)
     >>> aperture = C1._aperture()
+
     If you want to only model one mirror then appix and npix can be 
     set to the same. The assumption is that the entire aperture is 
     going to be modelled. 
+
     To use the aperture to generate an orthonormal basis on the not 
     quite a hexagon we use the following code. 
+
     >>> basis = Basis(C1(), nterms)._basis()
+
     To learn the rotation, shear and other parameters of the mirror 
     we can provide this functionality to the constructor of the 
     aperture. For example:
@@ -635,10 +665,12 @@ class JWSTPrimaryApertureSegment(Aperture):
     ...     shear : float = 0.1,
     ...     magnification = 1.001)
     >>> basis = Basis(npix, nterms, C1)._basis()   
+
     The generation of zernike polynomials and there orthonormalisation
     is an archilies heal of the project, currently runnig much slower 
     than equivalent implementations and there is ongoing work into 
     optimising this but for now you are unfortunate.  
+
     Attributes
     ----------
     segement : str
@@ -669,6 +701,7 @@ class JWSTPrimaryApertureSegment(Aperture):
                                 +---+                       
                                   |
                     fig 1. The unsheered aperture.
+
                                   |  / 
                                   +---+
                                 * |/  *
@@ -677,6 +710,7 @@ class JWSTPrimaryApertureSegment(Aperture):
                               +---+                       
                                /  |
                     fig 2. The sheered aperture. 
+
     magnification : float
         The multiplicative factor indicating the size of the aperture
         from the initial.
@@ -747,6 +781,7 @@ class JWSTPrimaryApertureSegment(Aperture):
         array.shape[0] + 1`. This is just a helper method to simplify 
         external object and is not physically important (Only invoke 
         this method if you know what you are doing)
+
         Parameters
         ----------
         array : Vector
@@ -756,6 +791,7 @@ class JWSTPrimaryApertureSegment(Aperture):
             The new order for the elements of `array`. Will be accessed 
             by invoking `array.at[order]` hence `order` must be `int`
             `dtype`.
+
         Returns
         -------
         wrapped : Vector
@@ -776,10 +812,12 @@ class JWSTPrimaryApertureSegment(Aperture):
         """
         Generates the vertices that are compatible with the rest of 
         the transformations from the raw data vertices.
+
         Parameters
         ----------
         vertices : Matrix, meters
             The vertices loaded from the WebbPSF module. 
+
         Returns
         -------
         x, y, angles : tuple 
@@ -818,6 +856,7 @@ class JWSTPrimaryApertureSegment(Aperture):
     def _offset(self : Layer, vertices : Matrix) -> tuple:
         """
         Get the offsets of the coordinate system.
+
         Parameters
         ----------
         vertices : Matrix 
@@ -826,6 +865,7 @@ class JWSTPrimaryApertureSegment(Aperture):
             (2, number_of_vertices)`. 
         pixel_scale : float, meters
             The physical size of each pixel along one of its edges.
+
         Returns 
         -------
         x_offset, y_offset : float, meters
@@ -841,10 +881,12 @@ class JWSTPrimaryApertureSegment(Aperture):
         """
         Generates the vectorised coordinate system associated with the 
         aperture.
+
         Parameters
         ----------
         phi_naught : float 
             The angle substending the first vertex. 
+
         Returns 
         -------
         rho, theta : tuple[Tensor]
@@ -869,6 +911,7 @@ class JWSTPrimaryApertureSegment(Aperture):
     def _edges(self : Layer, rho : Tensor, theta : Tensor) -> Tensor:
         """
         Generate lines connecting adjacent vertices.
+
         Parameters
         ----------
         rho : Tensor, meters
@@ -876,6 +919,7 @@ class JWSTPrimaryApertureSegment(Aperture):
             centre of __this__ aperture. 
         theta : Tensor, Radians
             The angle associated with every point in the final bitmap.
+
         Returns
         -------
         edges : Tensor
@@ -914,12 +958,14 @@ class JWSTPrimaryApertureSegment(Aperture):
     def _wedges(self : Layer, theta : Tensor) -> Tensor:
         """
         The angular bounds of each segment of an individual hexagon.
+
         Parameters
         ----------
         theta : Tensor, Radians
             The angle away from the positive x-axis of the coordinate
             system associated with this aperture. Please note that `theta`
             May not start at zero. 
+
         Returns 
         -------
         wedges : Tensor 
@@ -953,6 +999,7 @@ class JWSTPrimaryApertureSegment(Aperture):
     def _segments(self : Layer, theta : Tensor, rho : Tensor) -> Tensor:
         """
         Generate the segments as a stacked tensor. 
+
         Parameters
         ----------
         theta : Tensor
@@ -961,6 +1008,7 @@ class JWSTPrimaryApertureSegment(Aperture):
         rho : Tensor
             The radial positions associated with the coordinate system 
             of this aperture. 
+
         Returns 
         -------
         segments : Tensor 
@@ -976,6 +1024,7 @@ class JWSTPrimaryApertureSegment(Aperture):
         """
         Generate the BitMap representing the aperture described by the 
         vertices. 
+
         Returns
         -------
         aperture : Matrix 
@@ -991,11 +1040,13 @@ class JWSTPrimaryApertureSegment(Aperture):
     def _load(self : Layer, segment : str):
         """
         Load the desired segment from the WebbPSF data. 
+
         Parameters
         ----------
         segment : str
             The segment that is desired to load. Should be in the 
             form "Ln". See the class doc string for more detail.
+
         Returns
         -------
         vertices : Matrix, meters
@@ -1010,6 +1061,7 @@ class CompoundAperture(eqx.Module):
     Represents an aperture that contains more than one single 
     aperture. The smaller sub-apertures are stored in a dictionary
     pytree and are so acessible by user defined name. For example:
+
     >>> x_sep = 0.1
     >>> width = 0.005
     >>> height = 0.2
@@ -1024,6 +1076,7 @@ class CompoundAperture(eqx.Module):
     >>> apertures = {"Right": first_slit, "Left": second_slit}
     >>> double_slit = CompoundAperture(apertures)
     >>> double_slit["Right"]
+
     Attributes
     ----------
     npix : int
@@ -1077,6 +1130,7 @@ class CompoundAperture(eqx.Module):
     def __setitem__(self : Layer, key : str, value : Layer) -> None:
         """
         Assign a new value to one of the aperture mirrors.
+
         Parameters
         ----------
         key : str
@@ -1122,6 +1176,7 @@ class JWSTPrimaryAperture(CompoundAperture):
         telescope. This constructor initialises default values for 
         the segements. This means that they are not rotated magnified
         or sheared. 
+
         Parameters
         ----------
         number_of_pixels : int
@@ -1146,10 +1201,12 @@ class JWSTPrimaryAperture(CompoundAperture):
     def _pixel_scale(self : Layer, npix : int) -> float:
         """
         The physical dimesnions of a pixel along one edge. 
+
         Parameters
         ----------
         npix : int
             The number of pixels along one edge of the output image 
+
         Returns
         -------
         pixel_scale : float, meters
@@ -1204,6 +1261,7 @@ class Basis(eqx.Module):
     def save(self : Layer, file_name : str, n : int) -> None:
         """
         Save the basis to a file.
+
         Parameters
         ----------
         file_name : str
@@ -1226,18 +1284,21 @@ class Basis(eqx.Module):
         (https://oeis.org/A176988) for more detail. The top of the 
         mapping between the noll index and the pair of numbers is 
         shown below:
+
         n, m Indices
         ------------
         (0, 0)
         (1, -1), (1, 1)
         (2, -2), (2, 0), (2, 2)
         (3, -3), (3, -1), (3, 1), (3, 3)
+
         Noll Indices
         ------------
         1
         3, 2
         5, 4, 6
         9, 7, 8, 10
+
         Parameters
         ----------
         j : int
@@ -1309,6 +1370,7 @@ class Basis(eqx.Module):
             rho : Matrix) -> Tensor:
         """
         The radial zernike polynomial.
+
         Parameters
         ----------
         n : int
@@ -1318,6 +1380,7 @@ class Basis(eqx.Module):
         rho : Matrix
             The radial positions of the aperture. Passed as an argument 
             for speed.
+
         Returns
         -------
         radial : Tensor
@@ -1344,6 +1407,7 @@ class Basis(eqx.Module):
     def _zernikes(self : Layer, coordinates : Tensor) -> Tensor:
         """
         Calculate the zernike basis on a square pixel grid. 
+
         Parameters
         ----------
         number : int
@@ -1357,6 +1421,7 @@ class Basis(eqx.Module):
             The cartesian coordinates to generate the hexikes on.
             The dimensions of the tensor should be `(2, npix, npix)`.
             where the leading axis is the x and y dimensions.  
+
         Returns
         -------
         zernike : Tensor 
@@ -1430,6 +1495,7 @@ class Basis(eqx.Module):
             The zernike polynomials to orthonormalise on the aperture.
             This tensor should be `(nterms, npix, npix)` in size, where 
             the first axis represents the noll indexes. 
+
         Returns
         -------
         hexikes : Tensor
@@ -1468,12 +1534,14 @@ class Basis(eqx.Module):
         Generate the basis. Requires a single run after which,
         the basis is cached and can be used with no computational 
         cost.  
+
         Parameters
         ----------
         aperture : Matrix
             The aperture over which the basis is to be generated. 
         coordinates : Matrix, meters, radians 
             The coordinate system over which to generate the aperture.
+
         Returns
         -------
         basis : Tensor
@@ -1520,6 +1588,7 @@ class CompoundBasis(eqx.Module):
     def basis(self : Layer) -> Tensor:
         """
         Generate a basis over a compound aperture.
+
         Returns 
         -------
         basis : Tensor
